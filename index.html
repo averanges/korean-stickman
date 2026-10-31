@@ -27,6 +27,7 @@
         <div class="home-kicker"><span class="chapter-line"></span> ДОМ · ВТОРАЯ ВСТРЕЧА</div>
         <svg id="home-scene" viewBox="50 20 900 735" role="img" aria-label="Пустая комната"></svg>
         <div class="home-scene-footer"><p id="room-caption" role="status">Пустая комната ждёт твоих слов.</p><label class="room-debug-toggle"><input id="room-debug" type="checkbox"> Геометрия</label></div>
+        <div id="room-debug-controls" class="room-debug-controls" hidden><strong>Пошаговая проверка</strong><p>Введи в поле фразы: <code>/move_to book</code> → <code>/take book</code> → <code>/use book</code> → <code>/put book</code>. Вместо book можно указать water; для подхода — desk.</p><output id="room-operation">Операций пока нет</output></div>
       </section>
       <aside class="hero-card" aria-label="Игровая панель">
         <div class="paper-tape tape-left" aria-hidden="true"></div><div class="paper-tape tape-right" aria-hidden="true"></div>
@@ -49,7 +50,7 @@
         <button id="enter-world" class="world-button">В мир <span>→</span></button><p class="optional-note">Можно отправиться даже с пустой анкетой</p>
       </aside>
     </div>
-    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>Уровень 2 · «Мой дом» · Прототип 1</span></footer>
+    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V2.2 · «Мой дом» · Навигация и взаимодействия</span></footer>
   </main>
   <script type="module" src="src/main.js"></script>
 </body>

@@ -45,8 +45,9 @@ function refresh(){
   $('#context-hint').textContent=profile.awake?'Например: 저는 학생이에요 — «Я ученик»':'Скажи «안녕하세요» — «Здравствуйте»';
   $('#scene').setAttribute('aria-label',`${profile.awake?'Стоящий':'Спящий'} стикмен. ${Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean).join(', ')}`);
   if(mode==='home'){
-    for(const id of ['desk','book','water']){const placement=room.items[id];$(`#room-${id}`).textContent=placement==='table'?'На столе':placement==='floor'?'На полу':'Пока нет';$(`#room-${id}`).classList.toggle('present',Boolean(placement));}
+    for(const id of ['desk','book','water']){const placement=room.items[id];$(`#room-${id}`).textContent=placement==='hand'?'В руке':placement==='table'?'На столе':placement==='floor'?'На полу':'Пока нет';$(`#room-${id}`).classList.toggle('present',Boolean(placement));}
     $('#room-hero-summary').textContent=[profile.name||'Твой герой',...Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean)].join(' · ');
+    const op=roomController.operation;$('#room-operation').textContent=op?`${op.action} ${op.item} · ${op.status}${op.message?' · '+op.message:''}`:'Операций пока нет';
   }
 }
 controller=new ActionController(world,renderer,{
@@ -120,7 +121,7 @@ $('#hero-name').addEventListener('input',event=>{world.setName(event.target.valu
 function diagnose(raw,command,source){
   if(new URLSearchParams(location.search).get('debug')==='1')console.info('[Korean Stickman interpretation]',{source,raw,accepted:command.ok,intents:command.intents||[],reason:command.reason||command.type||'unknown'});
 }
-$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=mode==='home'?parseRoom(raw):parseKorean(raw,world.profile);diagnose(raw,command,'manual');execute(command);}};
+$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=mode==='home'?parseRoom(raw,{debug:roomRenderer.debug}):parseKorean(raw,world.profile);diagnose(raw,command,'manual');execute(command);}};
 $('#mic').onclick=()=>{voiceError=false;if(speech.recording)speech.stop();else if(!speech.active)speech.start();refresh();};
 $('#cancel-recording').onclick=()=>{speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
 $('#repeat').onclick=()=>{if(last)execute(last);};
@@ -132,7 +133,7 @@ $('#reset').onclick=()=>{
 function changeLevel(home){
   revision++;speech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · прототип':'Korean Stickman — Создай своего героя';
+  document.title=home?'Korean Stickman — Мой дом · V2.2':'Korean Stickman — Создай своего героя';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
@@ -142,12 +143,12 @@ function changeLevel(home){
   $('.optional-note').textContent=home?'Характеристики героя сохранены':'Можно отправиться даже с пустой анкетой';
   $('#reset').setAttribute('aria-label',home?'Очистить комнату':'Начать заново');$('#reset').title=home?'Убрать предметы, сохранив героя':'Очистить сохранённого героя и начать заново';$('#reset span').textContent=home?'Очистить комнату':'Начать заново';
   $('#command').value='';$('#command').placeholder=home?'Или напиши: 책상이 있어요':'Или напиши: 학생이에요';$('#transcript').textContent='…';
-  if(home){roomRenderer.visible=true;roomRenderer.cancel(room.items);feedback(Object.values(room.items).some(Boolean)?'Твой дом сохранился. Можешь читать книгу, пить воду или менять предметы.':'Это твой дом. Начни с «책상이 있어요».');}
+  if(home){roomRenderer.visible=true;roomRenderer.synchronize();feedback(Object.values(room.items).some(Boolean)?'Твой дом сохранился. Можешь читать книгу, пить воду или менять предметы.':'Это твой дом. Начни с «책상이 있어요».');}
   else feedback('Твой герой сохранён. Его характеристики можно менять.');
   refresh();window.scrollTo({top:0,behavior:'instant'});
 }
 $('#enter-world').onclick=()=>changeLevel(mode!=='home');
-$('#room-debug').onchange=event=>roomRenderer.setDebug(event.target.checked);
+$('#room-debug').onchange=event=>{roomRenderer.setDebug(event.target.checked);$('#room-debug-controls').hidden=!event.target.checked;};
 if(!speech.supported){$('#speech-help').textContent='Запись недоступна — напиши фразу ниже';feedback('Браузер не поддерживает запись подходящего аудиоформата. Ручной ввод работает.');}
 if(!world.storageAvailable)feedback('Сохранение недоступно. Герой останется в текущей вкладке.');
 else if(world.profile.awake)feedback('С возвращением! Герой сохранён. Его характеристики можно менять.');
