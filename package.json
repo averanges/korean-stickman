@@ -6,6 +6,7 @@
   "engines": { "node": "24.x" },
   "scripts": {
     "start": "node server.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
     "dev": "node server.mjs",
     "test": "node --test tests/*.test.js"
   }

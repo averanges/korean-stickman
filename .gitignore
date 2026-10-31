@@ -19,6 +19,7 @@ Thumbs.db
 .vscode/
 .idea/
 coverage/
+dist/
 work/
 archive/
 .npmrc

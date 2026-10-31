@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { readConfig } from './server/config.mjs';
 import { GroqWhisper, SttError, MAX_AUDIO_BYTES, AUDIO_TYPES } from './server/stt.mjs';
-import { publicOrigins, allowedRequest, SttGate } from './server/security.mjs';
+import { publicOrigins, frontendOrigins as configuredFrontends, allowedRequest, SttGate } from './server/security.mjs';
 const projectURL=new URL('.',import.meta.url);
 const root=path.resolve(fileURLToPath(projectURL));
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'};
@@ -16,12 +16,22 @@ async function readAudio(req){
   if(length<128)throw new SttError('empty-audio');
   return Buffer.concat(chunks);
 }
-export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),gate=new SttGate()}={}){
+export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),frontends=configuredFrontends(),apiOnly=process.env.RENDER==='true'||process.env.API_ONLY==='true',gate=new SttGate()}={}){
   return http.createServer(async(req,res)=>{
     try{
       const host=req.headers.host||'';
-      if(!allowedRequest(req,origins)){json(res,403,{error:'forbidden'});return;}
+      if(!allowedRequest(req,origins,frontends)){json(res,403,{error:'forbidden'});return;}
       const pathname=decodeURIComponent(new URL(req.url,`http://${host}`).pathname);
+      if(pathname==='/api/stt'||pathname==='/api/stt/status'){
+        if(req.headers.origin){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Expose-Headers','Retry-After');}
+        if(req.method==='OPTIONS'){
+          const method=pathname==='/api/stt'?'POST':'GET';
+          const allowedHeaders=['content-type','x-requested-with','x-audio-duration-ms','accept'];
+          const requested=String(req.headers['access-control-request-headers']||'').toLowerCase().split(',').map(value=>value.trim()).filter(Boolean);
+          if(!req.headers.origin||req.headers['access-control-request-method']!==method||requested.some(value=>!allowedHeaders.includes(value))){json(res,403,{error:'forbidden'});return;}
+          res.writeHead(204,{'Access-Control-Allow-Methods':method+', OPTIONS','Access-Control-Allow-Headers':allowedHeaders.join(', '),'Access-Control-Max-Age':'600'});res.end();return;
+        }
+      }
       if(pathname==='/api/stt/status'&&req.method==='GET'){
         const settings=await config();json(res,200,{configured:Boolean(settings.key),provider:'Groq Whisper'});return;
       }
@@ -46,6 +56,7 @@ export function createApp({config=()=>readConfig(projectURL),providerFactory=opt
         return;
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){json(res,405,{error:'method-not-allowed'});return;}
+      if(apiOnly){json(res,404,{error:'api-only'});return;}
       // Only public app assets are served. .env, server code, tests and dotfiles are never public.
       const publicPath=pathname==='/'?'/index.html':pathname;
       if(!(publicPath==='/index.html'||/^\/src\/[a-z0-9-]+\.(js|css)$/u.test(publicPath)||publicPath==='/docs/assets.svg')){json(res,404,{error:'not-found'});return;}
