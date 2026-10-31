@@ -4,9 +4,16 @@ import { WorldState } from './world.js';
 import { Renderer } from './renderer.js';
 import { ActionController } from './controller.js';
 import { BrowserSpeech } from './speech.js';
+import { RoomState, RoomController, parseRoom } from './room-state.js';
+import { RoomRenderer } from './room-renderer.js';
 const $=selector=>document.querySelector(selector);
 const world=new WorldState();
 const renderer=new Renderer(world.profile);
+const room=new RoomState();
+const roomRenderer=new RoomRenderer(renderer,{onPhase:message=>{$('#room-caption').textContent=message;}});
+const roomController=new RoomController(room,roomRenderer,{onChange:()=>refresh(),onProgress:command=>{
+  $('#transcript').textContent=command.heard||'…';feedback(command.ok?'Герой тебя услышал. Смотри, что будет…':command.message);
+}});
 let controller, speech, last=null, revision=0, voiceError=false, speechPhase='idle', mode='creator';
 let recordedMs=0;
 const feedback=(message,type='')=>{$('#feedback').textContent=message;$('#feedback').dataset.type=type;};
@@ -17,7 +24,8 @@ function refresh(){
     if(node.textContent!==text){node.textContent=text;node.classList.remove('updated');void node.offsetWidth;node.classList.add('updated');}
     node.classList.toggle('empty',!profile[field]);
   }
-  const listening=speech?.recording||false,voiceBusy=speech?.active||false,busy=world.busy;
+  const activeController=mode==='home'?roomController:controller;
+  const listening=speech?.recording||false,voiceBusy=speech?.active||false,busy=mode==='home'?roomController.busy:world.busy;
   const processing=['stopping','processing'].includes(speechPhase);
   $('#mic').disabled=!speech?.supported||processing||speechPhase==='requesting';
   $('#mic').classList.toggle('listening',listening);$('#mic').classList.toggle('processing',processing||busy&&!listening);$('#mic').classList.toggle('error',voiceError);
@@ -28,7 +36,7 @@ function refresh(){
   if(listening)$('#status').textContent='Слушаю';
   else if(speechPhase==='requesting')$('#status').textContent='Разрешите микрофон';
   else if(processing)$('#status').textContent='Обрабатываю';
-  else if(busy)$('#status').textContent=controller?.pending?`Обрабатываю · в очереди ${controller.pending}`:'Обрабатываю';
+  else if(busy)$('#status').textContent=activeController?.pending?`Обрабатываю · в очереди ${activeController.pending}`:'Обрабатываю';
   else $('#status').textContent=voiceError?'Повторить':'Готов';
   if(listening){const seconds=Math.floor(recordedMs/1000);$('#speech-help').textContent=`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} · Нажми ещё раз, когда закончишь`;}
   else if(processing)$('#speech-help').textContent='Распознаём полную запись';
@@ -36,6 +44,10 @@ function refresh(){
   $('#scene-caption').textContent=profile.awake?'Теперь это твой герой.':'Разбуди его одним словом.';
   $('#context-hint').textContent=profile.awake?'Например: 저는 학생이에요 — «Я ученик»':'Скажи «안녕하세요» — «Здравствуйте»';
   $('#scene').setAttribute('aria-label',`${profile.awake?'Стоящий':'Спящий'} стикмен. ${Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean).join(', ')}`);
+  if(mode==='home'){
+    for(const id of ['desk','book','water']){const placement=room.items[id];$(`#room-${id}`).textContent=placement==='table'?'На столе':placement==='floor'?'На полу':'Пока нет';$(`#room-${id}`).classList.toggle('present',Boolean(placement));}
+    $('#room-hero-summary').textContent=[profile.name||'Твой герой',...Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean)].join(' · ');
+  }
 }
 controller=new ActionController(world,renderer,{
   onChange:refresh,
@@ -45,6 +57,13 @@ controller=new ActionController(world,renderer,{
   },
 });
 async function execute(command){
+  if(mode==='home'){
+    voiceError=false;if(command.ok)last=command;const current=revision;
+    if(roomController.busy)feedback('Фраза в очереди. Герой сначала закончит движение.');
+    const result=await roomController.run(command);
+    if(!result.cancelled&&revision===current&&mode==='home'&&(!roomController.busy||result.type==='queue'))feedback(result.message,result.type);
+    refresh();return;
+  }
   if(command.commands){const revisionBefore=revision;const results=await Promise.all(command.commands.map(item=>execute({...item,heard:command.heard})));if(revision===revisionBefore){last=command;refresh();}return results;}
   voiceError=false;
   const current=revision;
@@ -64,7 +83,7 @@ speech=new BrowserSpeech({
     refresh();
   },
   onFinal:text=>{
-    const command=interpretSpeech([{text}],world.profile);
+    const command=mode==='home'?parseRoom(text):interpretSpeech([{text}],world.profile);
     diagnose(text,command,'Groq');
     $('#command').value=text;
     execute(command);
@@ -101,26 +120,36 @@ $('#hero-name').addEventListener('input',event=>{world.setName(event.target.valu
 function diagnose(raw,command,source){
   if(new URLSearchParams(location.search).get('debug')==='1')console.info('[Korean Stickman interpretation]',{source,raw,accepted:command.ok,intents:command.intents||[],reason:command.reason||command.type||'unknown'});
 }
-$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=parseKorean(raw,world.profile);diagnose(raw,command,'manual');execute(command);}};
+$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=mode==='home'?parseRoom(raw):parseKorean(raw,world.profile);diagnose(raw,command,'manual');execute(command);}};
 $('#mic').onclick=()=>{voiceError=false;if(speech.recording)speech.stop();else if(!speech.active)speech.start();refresh();};
 $('#cancel-recording').onclick=()=>{speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
 $('#repeat').onclick=()=>{if(last)execute(last);};
 $('#reset').onclick=()=>{
+  if(mode==='home'){revision++;speech.cancel();roomController.reset();last=null;voiceError=false;$('#command').value='';$('#transcript').textContent='…';feedback('Комната снова пустая. Герой сохранил свои характеристики.');refresh();return;}
   revision++;speech.cancel();controller.reset();last=null;voiceError=false;$('#hero-name').value='';$('#command').value='';$('#transcript').textContent='…';
-  showCreator();feedback('Новая история начинается с приветствия. 안녕하세요!');refresh();
+  changeLevel(false);feedback('Новая история начинается с приветствия. 안녕하세요!');refresh();
 };
-function showCreator(){mode='creator';$('#world-screen').hidden=true;$('#creator').hidden=false;renderer.visible=true;refresh();}
-$('#enter-world').onclick=()=>{
-  revision++;speech.cancel();controller.cancel();world.save();mode='world';renderer.visible=false;
-  $('#world-name').textContent=world.profile.name||'Новый знакомый';
-  $('#world-description').textContent=Object.entries(catalogs).map(([field,catalog])=>catalog[world.profile[field]]?.label).filter(Boolean).join(' · ')||'У этой истории пока чистый лист. Всё ещё впереди!';
-  const portraitChair=!world.profile.awake?$('#chair').innerHTML.replaceAll('url(#wood)','url(#portrait-wood)'):'';
-  $('#world-portrait').innerHTML='<defs><linearGradient id="portrait-wood" x2=".8" y2="1"><stop stop-color="#f5c77f"/><stop offset="1" stop-color="#d69449"/></linearGradient></defs>'+portraitChair+renderer.portraitMarkup();
-  $('#save-note').textContent=world.storageAvailable?'Герой хранится в этом браузере на этом устройстве. Его характеристики можно изменить в любой момент.':'Браузер не разрешает сохранение. Герой останется с тобой в этой вкладке, пока она открыта.';
-  $('#creator').hidden=true;$('#world-screen').hidden=false;$('#back-to-creator').focus();window.scrollTo({top:0,behavior:'instant'});
-};
-$('#back-to-creator').onclick=()=>{showCreator();$('#enter-world').focus();};
+function changeLevel(home){
+  revision++;speech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
+  mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
+  document.title=home?'Korean Stickman — Мой дом · прототип':'Korean Stickman — Создай своего героя';
+  $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
+  $('.profile-fields').hidden=home;$('.future').hidden=home;
+  $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
+  $('.card-subtitle').textContent=home?'Слова наполняют комнату':'Расскажи о нём по-корейски';
+  $('.header-actions .level-tag b').textContent=home?'02':'01';
+  $('#enter-world').textContent=home?'← К герою':'В мир →';
+  $('.optional-note').textContent=home?'Характеристики героя сохранены':'Можно отправиться даже с пустой анкетой';
+  $('#reset').setAttribute('aria-label',home?'Очистить комнату':'Начать заново');$('#reset').title=home?'Убрать предметы, сохранив героя':'Очистить сохранённого героя и начать заново';$('#reset span').textContent=home?'Очистить комнату':'Начать заново';
+  $('#command').value='';$('#command').placeholder=home?'Или напиши: 책상이 있어요':'Или напиши: 학생이에요';$('#transcript').textContent='…';
+  if(home){roomRenderer.visible=true;roomRenderer.cancel(room.items);feedback(Object.values(room.items).some(Boolean)?'Твой дом сохранился. Можешь читать книгу, пить воду или менять предметы.':'Это твой дом. Начни с «책상이 있어요».');}
+  else feedback('Твой герой сохранён. Его характеристики можно менять.');
+  refresh();window.scrollTo({top:0,behavior:'instant'});
+}
+$('#enter-world').onclick=()=>changeLevel(mode!=='home');
+$('#room-debug').onchange=event=>roomRenderer.setDebug(event.target.checked);
 if(!speech.supported){$('#speech-help').textContent='Запись недоступна — напиши фразу ниже';feedback('Браузер не поддерживает запись подходящего аудиоформата. Ручной ввод работает.');}
 if(!world.storageAvailable)feedback('Сохранение недоступно. Герой останется в текущей вкладке.');
 else if(world.profile.awake)feedback('С возвращением! Герой сохранён. Его характеристики можно менять.');
 refresh();
+if(new URLSearchParams(location.search).get('level')==='2')changeLevel(true);

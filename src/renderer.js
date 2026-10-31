@@ -42,6 +42,12 @@ export class Renderer {
   setProfile(profile){this.profile={...profile};this.look=appearance(profile);this.draw();}
   // The portrait uses both character layers, preserving the existing world screen.
   portraitMarkup(){return this.actor.innerHTML+this.arm.innerHTML;}
+  // Level 2 uses the same skeleton, face and equipped appearance in its own scene.
+  roomMarkup(pose,{using=false,question=false}={}){
+    const previous={asleep:this.asleep,question:this.question,hideHandForSearch:this.hideHandForSearch};
+    this.asleep=false;this.question=question;this.hideHandForSearch=using;this.draw(pose);
+    const markup=this.portraitMarkup();Object.assign(this,previous);return markup;
+  }
   tween(duration,update){
     const generation=this.generation;this.animating=true;
     duration=this.motionReduced?Math.min(duration,220):duration;
