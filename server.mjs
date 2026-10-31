@@ -1,0 +1,68 @@
+import http from 'node:http';
+import { readFile, realpath } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { readConfig } from './server/config.mjs';
+import { GroqWhisper, SttError, MAX_AUDIO_BYTES, AUDIO_TYPES } from './server/stt.mjs';
+import { publicOrigins, allowedRequest, SttGate } from './server/security.mjs';
+const projectURL=new URL('.',import.meta.url);
+const root=path.resolve(fileURLToPath(projectURL));
+const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'};
+function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
+async function readAudio(req){
+  if(Number(req.headers['content-length'])>MAX_AUDIO_BYTES)throw new SttError('too-large',413);
+  const chunks=[];let length=0;
+  for await(const chunk of req){length+=chunk.length;if(length>MAX_AUDIO_BYTES)throw new SttError('too-large',413);chunks.push(chunk);}
+  if(length<128)throw new SttError('empty-audio');
+  return Buffer.concat(chunks);
+}
+export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),gate=new SttGate()}={}){
+  return http.createServer(async(req,res)=>{
+    try{
+      const host=req.headers.host||'';
+      if(!allowedRequest(req,origins)){json(res,403,{error:'forbidden'});return;}
+      const pathname=decodeURIComponent(new URL(req.url,`http://${host}`).pathname);
+      if(pathname==='/api/stt/status'&&req.method==='GET'){
+        const settings=await config();json(res,200,{configured:Boolean(settings.key),provider:'Groq Whisper'});return;
+      }
+      if(pathname==='/api/stt'&&req.method==='POST'){
+        if(req.headers['x-requested-with']!=='KoreanStickman'){json(res,403,{error:'forbidden'});return;}
+        const mime=String(req.headers['content-type']||'').toLowerCase();
+        if(!AUDIO_TYPES.has(mime.split(';')[0].trim()))throw new SttError('unsupported-format',415);
+        const duration=Number(req.headers['x-audio-duration-ms']);
+        if(!Number.isFinite(duration)||duration<500)throw new SttError('too-short');
+        const settings=await config();if(!settings.key)throw new SttError('not-configured',503);
+        const release=gate.acquire();
+        if(!release){res.setHeader('Retry-After','60');json(res,429,{error:'rate-limit'});return;}
+        try{
+        const audio=await readAudio(req);
+        const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),60000);
+        const disconnected=()=>{if(!res.writableEnded)abort.abort();};res.on('close',disconnected);
+        try{
+          const result=await providerFactory(settings).transcribe(audio,mime,{signal:abort.signal});
+          if(!res.destroyed)json(res,200,result);
+        }finally{clearTimeout(timer);res.off('close',disconnected);}
+        }finally{release();}
+        return;
+      }
+      if(req.method!=='GET'&&req.method!=='HEAD'){json(res,405,{error:'method-not-allowed'});return;}
+      // Only public app assets are served. .env, server code, tests and dotfiles are never public.
+      const publicPath=pathname==='/'?'/index.html':pathname;
+      if(!(publicPath==='/index.html'||/^\/src\/[a-z0-9-]+\.(js|css)$/u.test(publicPath)||publicPath==='/docs/assets.svg')){json(res,404,{error:'not-found'});return;}
+      const target=await realpath(path.resolve(root,'.'+publicPath));
+      if(!target.startsWith(root+path.sep)){json(res,403,{error:'forbidden'});return;}
+      const data=await readFile(target);
+      res.writeHead(200,{'Content-Type':types[path.extname(target)]+'; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Permissions-Policy':'microphone=(self)'});
+      res.end(req.method==='HEAD'?undefined:data);
+    }catch(error){
+      if(res.destroyed)return;
+      if(error instanceof SttError)json(res,error.status,{error:error.code});
+      else json(res,error.code==='ENOENT'?404:500,{error:error.code==='ENOENT'?'not-found':'server-error'});
+    }
+  });
+}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  const settings=await readConfig(projectURL);
+  const server=createApp();server.requestTimeout=75000;
+  server.listen(settings.port,process.env.RENDER==='true'?'0.0.0.0':'127.0.0.1',()=>console.log(`Korean Stickman listening on port ${settings.port}`));
+}

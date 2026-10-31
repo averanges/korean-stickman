@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fffefa"><title>Korean Stickman — V1.2 · позы 2</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <main>
+    <header class="app-header"><a class="brand" href="./"><span class="brand-mark">한</span><span>Korean Stickman<small>СЛОВА СТАНОВЯТСЯ ИСТОРИЕЙ</small></span></a><div class="header-actions"><span class="level-tag">Уровень <b>01</b></span><button id="reset" aria-label="Начать заново" class="text-button" title="Очистить сохранённого героя и начать заново">↺ <span>Начать заново</span></button></div></header>
+    <div id="creator" class="game-layout">
+      <section class="stage" aria-label="Сцена создания героя">
+        <div class="scene-kicker"><span class="chapter-line"></span> ПЕРВАЯ ВСТРЕЧА</div>
+        <svg id="scene" viewBox="65 100 780 650" role="img" aria-label="Спящий стикмен на стуле рядом с коробкой аксессуаров">
+          <defs>
+            <linearGradient id="wood" x2=".8" y2="1"><stop stop-color="#f5c77f"/><stop offset="1" stop-color="#d69449"/></linearGradient>
+            <linearGradient id="cardboard" x2="1" y2="1"><stop stop-color="#f3d09b"/><stop offset="1" stop-color="#dba15e"/></linearGradient>
+          </defs>
+          <g id="chair"></g><g id="accessory-box-back"></g><g id="actor"></g><g id="front-arm"></g><g id="held-inside"></g><g id="accessory-box"><g id="box-contents"></g><g id="box-front"></g></g><g id="held"></g>
+          <g class="sparkles" stroke="#edb332" stroke-width="3.5" fill="none" stroke-linejoin="round"><path d="M697 364L701 378L711 382L701 387L697 402L692 387L683 382L692 378Z"/><path d="M560 285L564 296L572 300L564 304L560 315L556 304L548 300L556 296Z"/><path d="M749 463L762 451M770 490L785 487"/></g>
+        </svg>
+        <div id="greeting-hint" class="greeting-hint"><span class="mini-mic" aria-hidden="true">♪</span><span lang="ko">안녕하세요!</span><i></i></div>
+        <div class="scene-caption"><span id="scene-caption">Разбуди его одним словом.</span><small id="context-hint">Скажи «안녕하세요» — «Здравствуйте»</small></div>
+        
+      </section>
+      <aside class="hero-card" aria-label="Характеристики героя">
+        <div class="paper-tape tape-left" aria-hidden="true"></div><div class="paper-tape tape-right" aria-hidden="true"></div>
+        <h1>Создай своего героя</h1><p class="card-subtitle">Расскажи о нём по-корейски</p>
+        <div class="profile-fields">
+          <label class="profile-row"><span>Имя <small>необязательно</small></span><input id="hero-name" placeholder="Не указано" maxlength="32" autocomplete="off" aria-label="Имя героя, необязательно"></label>
+          <dl><div class="profile-row"><dt>Пол</dt><dd id="profile-gender">—</dd></div><div class="profile-row"><dt>Страна</dt><dd id="profile-country">—</dd></div><div class="profile-row"><dt>Профессия</dt><dd id="profile-profession">—</dd></div></dl>
+        </div>
+        <section class="future"><h2>В следующих историях</h2><ul><li>Возраст</li><li>Семья</li><li>Характер</li><li>Любимые вещи</li><li>Одежда</li></ul><span class="future-note">У каждого героя есть продолжение…</span></section>
+        <div class="voice-area"><button id="mic" class="mic" aria-label="Начать распознавание корейской речи"><svg viewBox="0 0 48 60" aria-hidden="true"><rect x="15" y="3" width="18" height="34" rx="9" fill="currentColor" stroke="none"/><path d="M7 27v3a17 17 0 0 0 34 0v-3M24 47v9M16 56h16" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg><span class="mic-spinner" aria-hidden="true"></span></button><strong id="status" role="status">Готов</strong><span id="speech-help">Нажми, чтобы начать запись</span><button id="cancel-recording" type="button" class="cancel-recording" hidden>Отменить запись</button></div>
+        <div class="heard-line"><span>Я СЛЫШУ</span><p id="transcript" lang="ko">…</p><button id="repeat" aria-label="Повторить последнюю команду" title="Повторить последнюю команду" disabled>↻</button></div>
+        <p id="feedback" role="status">Начни с приветствия. Или сразу расскажи о герое!</p>
+        <form id="command-form"><label class="sr-only" for="command">Фраза на корейском</label><input id="command" placeholder="Или напиши: 학생이에요" autocomplete="off" maxlength="150"><button id="submit" type="submit" aria-label="Выполнить фразу" title="Выполнить фразу">↗</button></form>
+        <button id="enter-world" class="world-button">В мир <span>→</span></button><p class="optional-note">Можно отправиться даже с пустой анкетой</p>
+      </aside>
+    </div>
+    <section id="world-screen" class="world-screen" hidden aria-label="Следующая история">
+      <span class="world-eyebrow">ПРОДОЛЖЕНИЕ СЛЕДУЕТ</span><h2>У каждого героя — свой мир.</h2><p>Твой герой сохранён и готов к следующей истории.</p>
+      <div class="world-hero"><svg id="world-portrait" viewBox="120 160 450 560" role="img" aria-label="Созданный герой"></svg><div><span class="level-tag">ТВОЙ ГЕРОЙ</span><h3 id="world-name">Новый знакомый</h3><p id="world-description"></p><div class="next-level"><span>02</span><div><b>Первая история</b><small>Этот уровень ещё в разработке</small></div><span aria-hidden="true">♧</span></div></div></div>
+      <button id="back-to-creator" class="world-button">← Вернуться к герою</button><p id="save-note" class="save-note"></p>
+    </section>
+    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V1.2 · позы 2 · Повторить — это нормально.</span></footer>
+  </main>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
