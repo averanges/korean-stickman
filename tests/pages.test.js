@@ -33,18 +33,22 @@ test('frontend origin cannot include repository path or wildcard',()=>{
   for(const value of [page+'/korean-stickman/','http://pupil.github.io','*'])assert.throws(()=>frontendOrigins({FRONTEND_ORIGIN:value}));
 });
 test('API URLs work on Pages subpath and local dev; missing public configuration fails closed',()=>{
+  assert.equal(apiUrl('/api/stt',undefined,{hostname:'averanges.github.io',pathname:'/korean-stickman/'}),backend+'/api/stt');
+  assert.equal(apiUrl('/api/stt',undefined,{hostname:'localhost'}),'/api/stt');
+  assert.equal(apiUrl('/api/stt',undefined,{hostname:'127.0.0.1'}),'/api/stt');
   assert.equal(apiUrl('/api/stt',backend,{hostname:'pupil.github.io',pathname:'/korean-stickman/'}),backend+'/api/stt');
   assert.equal(apiUrl('/api/stt','',{hostname:'localhost'}),'/api/stt');
   assert.throws(()=>apiUrl('/api/stt','',{hostname:'pupil.github.io'}),error=>error.code==='api-unconfigured');
 });
 test('Pages build publishes only public assets and supports /korean-stickman/ without backend requests',async()=>{
   const output=await mkdtemp(path.join(tmpdir(),'stickman-pages-'));
-  await buildPages({apiBase:backend,output});
+  const override='https://replacement-api.onrender.com';
+  await buildPages({apiBase:override,output});
   const names=await readdir(output,{recursive:true});
   for(const name of names)assert.ok(name==='src'||name==='docs'||name==='index.html'||name==='.nojekyll'||/^src[\\/][a-z0-9-]+\.(js|css)$/u.test(name)||/^docs[\\/]assets.svg$/u.test(name),name);
   const html=await readFile(path.join(output,'index.html'),'utf8');
   assert.match(html,/href="src\/style.css"/);assert.match(html,/src="src\/main.js"/);assert.doesNotMatch(html,/<script[^>]+https?:/);
-  const api=await readFile(path.join(output,'src','api-config.js'),'utf8');assert.ok(api.includes(backend));
+  const api=await readFile(path.join(output,'src','api-config.js'),'utf8');assert.ok(api.includes(override));assert.ok(!api.includes(backend));
   for(const name of names.filter(name=>/\.js$/u.test(name))){
     const source=await readFile(path.join(output,name),'utf8');
     for(const match of source.matchAll(/from\s+['"](\.\/[^'"]+)['"]/gu))await readFile(path.resolve(path.dirname(path.join(output,name)),match[1]));

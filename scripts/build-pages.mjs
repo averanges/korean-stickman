@@ -19,7 +19,9 @@ export async function buildPages({apiBase=process.env.API_BASE_URL,output}={}){
     await copyFile(source,path.join(target,'src',file));
   }
   const template=await readFile(path.join(root,'src','api-config.js'),'utf8');
-  await writeFile(path.join(target,'src','api-config.js'),template.replace("export const API_BASE_URL='';",`export const API_BASE_URL=${JSON.stringify(api.origin)};`));
+  const declaration=/^export const API_BASE_URL=.*;$/gmu;
+  if([...template.matchAll(declaration)].length!==1)throw Error('API configuration declaration missing or ambiguous');
+  await writeFile(path.join(target,'src','api-config.js'),template.replace(declaration,`export const API_BASE_URL=${JSON.stringify(api.origin)};`));
   await writeFile(path.join(target,'.nojekyll'),'');
   return target;
 }
