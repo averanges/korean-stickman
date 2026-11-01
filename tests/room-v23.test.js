@@ -54,11 +54,11 @@ test('view conversion and moving turns keep world head, feet and wrist attached 
     let previous;for(let n=0;n<=20;n++){const b=walkingBlend(route,70,from,to,n/20,true),wrist=wristWorld(position,b.pose,b.poseFacing);if(previous)assert.ok(distance(previous,wrist)<5);previous=wrist;assert.deepEqual(sorted([worldPoint(position,b.pose.lf,b.poseFacing),worldPoint(position,b.pose.rf,b.poseFacing)]),feet);}
   }
 });
-test('back view hides the face and places the backpack above the torso; profile has one forward eye',()=>{
+test('back view hides the face and places the backpack above the torso; visible profile keeps two eyes',()=>{
   const hero=Object.create(Renderer.prototype);Object.assign(hero,{actor:{dataset:{},innerHTML:''},arm:{innerHTML:''},look:appearance({country:'russia',profession:'student',gender:'male'}),asleep:false,animating:false});
   const back=hero.roomLayers(POSES.stand,{facing:'back',hideFlag:true}),side=hero.roomLayers(POSES.stand,{facing:'right',hideFlag:true});
   assert.ok(back.body.indexOf('data-slot="back"')>back.body.indexOf('data-part="torso"'));assert.ok(!back.body.includes('<ellipse cx="27"'));assert.ok(!back.body.includes('<ellipse cx="-18"'));assert.ok(back.body.includes('data-asset="ushanka"'));
-  assert.ok(side.body.includes('<ellipse cx="27"'));assert.ok(!side.body.includes('<ellipse cx="-6"'));
+  assert.ok(side.body.includes('<ellipse cx="27"'));assert.ok(side.body.includes('<ellipse cx="-6"'));
 });
 test('selected side approaches preserve take/use/put and exact ownership on both surfaces',async()=>{
   for(const id of ['book','water'])for(const surface of ['floor','table'])for(const start of [[.25,.4],[.95,.85]]){

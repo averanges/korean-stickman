@@ -73,8 +73,8 @@ export class Renderer {
     const torso=`M${nx-sx*14} ${ny-sy*14}Q${lerp(nx,px,.5)-sx*22} ${lerp(ny,py,.5)-sy*22} ${px-sx*19} ${py-sy*19}Q${px-sy*10} ${py+sx*10} ${px+sx*19} ${py+sy*19}Q${lerp(nx,px,.5)+sx*17} ${lerp(ny,py,.5)+sy*17} ${nx+sx*14} ${ny+sy*14}Z`;
     const hair=this.look.hair==='bob'?'<path d="M-54-25Q-80 7-64 64L-35 54L-30-10M52-25Q76 7 64 62L38 53L29-10" fill="#49423f" stroke="#25272c" stroke-width="5"/>':'';
     const fringe=this.look.hair==='tuft'?'<path d="M-48-35Q-25-76 14-64L42-46L13-39L-3-49L-15-36L-29-43Z" fill="#49423f" stroke="#25272c" stroke-width="3"/>':this.look.hair==='bob'?'<path d="M-53-28Q-50-64-7-63Q36-67 53-30Q26-32 7-47Q-14-28-53-28Z" fill="#49423f" stroke="#25272c" stroke-width="3"/>':'';
-    const back=this.roomView==='back',front=this.roomView==='front',side=['left','right'].includes(this.roomView);
-    const eyes=back?'':side?(p.eye<.15?'<path d="M20 7Q28 15 36 7" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="27" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`):p.eye<.15?'<path d="M-16 7Q-8 17 0 7M20 5Q28 15 36 5" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="${front?-18:-6}" cy="9" rx="4" ry="${6*p.eye}" fill="#25272c"/><ellipse cx="${front?18:27}" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`;
+    const back=this.roomView==='back',front=this.roomView==='front';
+    const eyes=back?'':p.eye<.15?'<path d="M-16 7Q-8 17 0 7M20 5Q28 15 36 5" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="${front?-18:-6}" cy="9" rx="4" ry="${6*p.eye}" fill="#25272c"/><ellipse cx="${front?18:27}" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`;
     this.actor.dataset.pose=this.asleep?'sleeping':this.animating?'moving':'standing';
     this.actor.innerHTML=`<ellipse cx="${this.asleep?px+16:(p.la[0]+p.ra[0])/2+10}" cy="681" rx="75" ry="11" fill="#31313d" opacity=".08"/>
       <g stroke-linecap="round" stroke-linejoin="round">${back?'':this.placed(this.look.back,'back',p)}

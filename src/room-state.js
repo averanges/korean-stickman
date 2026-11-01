@@ -1,11 +1,12 @@
 import {TABLE,FLOOR_SLOTS,TABLE_SLOTS,START,GRIPS,project,approach,distance,facingFor} from './room-space.js';
 import {planRoute,walkable,chooseRoute,NAV} from './room-navigation.js';
 import {reachableGrip,gripExtension} from './room-motion.js';
+import {releaseSurface} from './room-surfaces.js';
 export * from './room-space.js';
 export const ROOM_STORAGE_KEY='korean-stickman.room.v1';
 export const ROOM_ITEMS={desk:'Стол',book:'Книга',water:'Вода'};
 export const OPERATIONS=['move_to','take','put','use','open','close'];
-export const OBJECT_TYPES={desk:{type:'furniture',actions:['move_to'],footprint:TABLE},book:{type:'portable',actions:['move_to','take','put','use'],grip:GRIPS.book},water:{type:'portable',actions:['move_to','take','put','use'],grip:GRIPS.water}};
+export const OBJECT_TYPES={desk:{type:'furniture',actions:['move_to'],footprint:TABLE},book:{type:'portable',actions:['move_to','take','put','use'],grip:GRIPS.book,floorFootprint:{rx:44,ry:12}},water:{type:'portable',actions:['move_to','take','put','use'],grip:GRIPS.water,floorFootprint:{rx:18,ry:10}}};
 const copy=value=>structuredClone(value);
 const fail=(message,reason='impossible')=>({ok:false,message,reason});
 const missing=id=>`${ROOM_ITEMS[id]}: пока нет в комнате. Сначала скажи «${id==='book'?'책이':id==='water'?'물이':'책상이'} 있어요».`;
@@ -50,7 +51,11 @@ export class RoomState{
   get obstacles(){return Object.values(this.objects).filter(o=>o.type==='furniture'&&o.location.kind==='floor').map(o=>({id:o.id,...o.footprint}));}
   save(){try{this.storage?.setItem(ROOM_STORAGE_KEY,JSON.stringify({version:2,hero:this.hero,objects:this.objects}));this.storageAvailable=Boolean(this.storage);}catch{this.storageAvailable=false;}}
   reset(){this.initialize();this.save();}
-  repairSupports(){for(const id of ['book','water']){const o=this.objects[id];if(!this.items.desk){if(o.location.kind==='table')o.location=locationFor(id,'floor');if(o.returnTo?.kind==='table')o.returnTo=locationFor(id,'floor');}}}
+  repairSupports(){
+    const missing=new Set();for(const object of Object.values(this.objects))for(const loc of [object.location,object.returnTo])if(loc?.surface&&!['floor','hero'].includes(loc.surface)&&(!this.objects[loc.surface]||this.objects[loc.surface].location.kind==='absent'))missing.add(loc.surface);
+    for(const id of missing){const release=releaseSurface(this.objects,id,this.obstacles);if(release.ok)this.applyLocations(release);}
+  }
+  applyLocations({locations={},returnLocations={}}){for(const [id,loc] of Object.entries(locations))this.objects[id].location=copy(loc);for(const [id,loc] of Object.entries(returnLocations))this.objects[id].returnTo=copy(loc);}
   moveHero(position,facing=this.hero.facing){this.hero.position=[...position];this.hero.facing=facing;}
   point(id,{returning=false}={}){const o=this.objects[id],loc=returning?o.returnTo:o.location;return loc&&['floor','table'].includes(loc.kind)?project(loc.uv,loc.height):null;}
   contextAt(id,position,{returning=false}={}){
@@ -91,16 +96,21 @@ export class RoomState{
   describe(id){const o=this.objects[id];return {...copy(o),held:o.location.kind==='hand',interaction:this.target(id,{returning:o.location.kind==='hand'})};}
   plan(command){
     const next={...this.items},id=command.item,name=ROOM_ITEMS[id];if(!name||!['create','remove','use'].includes(command.action)||(command.action==='use'&&id==='desk'))return fail('Не удалось понять команду.');
+    let release={locations:{},returnLocations:{},falls:[]};
     if(command.action==='create'){
       if(next[id])return fail(`${name} уже есть в комнате.`,'duplicate');next[id]=id==='desk'||!next.desk?'floor':'table';
       if(id==='desk'&&!walkable(this.hero.position,[...this.obstacles,TABLE]))return fail('Герой стоит на месте будущего стола. Сначала отойди к другому предмету.','occupied');
     }else if(!next[id])return fail(missing(id),'missing');
     else if(command.action==='use'&&this.held&&this.held!==id)return fail('Рука занята. Сначала положи удерживаемый предмет.','held');
-    else if(command.action==='remove'){if(next[id]==='hand')return fail('Сначала положи предмет из руки.','held');next[id]=null;if(id==='desk')for(const small of ['book','water'])if(next[small]==='table')next[small]='floor';}
+    else if(command.action==='remove'){
+      if(next[id]==='hand')return fail('Сначала положи предмет из руки.','held');
+      release=releaseSurface(this.objects,id,this.obstacles);if(!release.ok)return release;
+      next[id]=null;for(const child of Object.keys(release.locations))next[child]='floor';
+    }
     const created={desk:'Стол появился.',book:'Книга появилась.',water:'Вода появилась.'},removed={desk:'Стол убран.',book:'Книга убрана.',water:'Вода убрана.'};
-    return {ok:true,...command,before:{...this.items},next,message:command.action==='use'?(id==='book'?'Герой прочитал книгу.':'Герой попил воды.'):command.action==='create'?created[id]:removed[id]};
+    return {ok:true,...command,before:{...this.items},next,...release,message:command.action==='use'?(id==='book'?'Герой прочитал книгу.':'Герой попил воды.'):command.action==='create'?created[id]:removed[id]};
   }
-  commit(plan){for(const [id,k] of Object.entries(plan.next))if(k!==this.items[id])this.objects[id].location=locationFor(id,k||'absent');this.repairSupports();this.save();}
+  commit(plan){for(const [id,k] of Object.entries(plan.next))if(k!==this.items[id]&&!plan.locations?.[id])this.objects[id].location=locationFor(id,k||'absent');this.applyLocations(plan);this.repairSupports();this.save();}
   prepare(operation){
     const {action,item:id}=operation,o=this.objects[id];if(!OPERATIONS.includes(action)||!o)return fail('Неизвестная операция.','unsupported');
     if(o.location.kind==='absent')return fail(missing(id),'missing');if(!o.actions.includes(action))return fail('Этот объект не поддерживает такую операцию.','unsupported');

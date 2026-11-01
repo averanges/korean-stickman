@@ -4,6 +4,7 @@ import {routeLength,travelProgress,routeDirection,NAV} from './room-navigation.j
 import {clonePose,floorPose,wristWorld,reachPose,carryPose,useTarget,walkingBlend,poseInFacing,worldPoint} from './room-motion.js';
 import {roomArt,deskArt,itemArt} from './room-art.js';
 import {flag} from './assets.js';
+import {surfaceFallPoint} from './room-surfaces.js';
 export {floorPose,wristWorld,reachPose,gripWorld} from './room-motion.js';
 const line=points=>points.map(p=>p.join(',')).join(' ');
 export class RoomRenderer{
@@ -70,8 +71,8 @@ export class RoomRenderer{
     this.phase('remove','Убираем предмет. Остальные остаются в комнате.');
     if(!await this.tween(400,t=>{this.effects[id]={opacity:1-ease(t)};}))return false;
     this.previewItems[id]=null;delete this.effects[id];
-    const falling=['book','water'].filter(small=>plan.before[small]==='table'&&plan.next[small]==='floor');
-    if(falling.length&&!await this.tween(750,t=>{for(const small of falling){const a=itemLocation(small,'table').point,b=itemLocation(small,'floor').point;this.effects[small]={point:a.map((v,i)=>lerp(v,b[i],ease(t)))};}}))return false;
+    const falling=plan.falls||[];
+    if(falling.length&&!await this.tween(650,t=>{for(const fall of falling)this.effects[fall.id]={point:surfaceFallPoint(fall,t),depth:project(fall.to.uv)[1]};}))return false;
     this.previewItems={...plan.next};return true;
   }
   async perform(operation,context,{contact}){
@@ -134,7 +135,7 @@ export class RoomRenderer{
     if(items.desk){const e=this.effects.desk||{},c=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]);entries.push({id:'desk',depth:tableDepth,html:`<g opacity="${e.opacity??1}" transform="translate(${c.join(' ')}) scale(${e.scale??1}) translate(${-c[0]} ${-c[1]})">${deskArt()}</g>`});}
     for(const id of ['book','water'])if(items[id]&&items[id]!=='hand'){
       const placement=items[id],e=this.effects[id]||{},same=placement===this.state.items[id],location=this.state.objects[id].location,point=e.point||(same?this.state.point(id):itemLocation(id,placement).point);
-      entries.push({id,depth:placement==='table'?tableDepth+1:project(same?location.uv:FLOOR_SLOTS[id])[1],html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
+      entries.push({id,depth:e.depth??(placement==='table'?tableDepth+1:project(same?location.uv:FLOOR_SLOTS[id])[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
     }
     const heroDepth=project(this.position)[1],overTable=this.interactionSurface==='desk'&&items.desk&&heroDepth<tableDepth+1;
     const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
