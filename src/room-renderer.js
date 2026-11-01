@@ -1,8 +1,9 @@
-import {POSES,mixPose,ease,lerp} from './geometry.js';
-import {TABLE,FLOOR_SLOTS,project,itemLocation,heroScale,facingSign,facingFor,landingPoint} from './room-space.js';
-import {routeLength,travelProgress} from './room-navigation.js';
-import {clonePose,floorPose,wristWorld,reachPose,carryPose,useTarget,walkingFrame} from './room-motion.js';
+import {POSES,mixPose,ease,lerp,flagAnchor} from './geometry.js';
+import {TABLE,FLOOR_SLOTS,project,itemLocation,heroScale,facingSign,facingDirection,landingPoint} from './room-space.js';
+import {routeLength,travelProgress,routeDirection,NAV} from './room-navigation.js';
+import {clonePose,floorPose,wristWorld,reachPose,carryPose,useTarget,walkingBlend,poseInFacing,worldPoint} from './room-motion.js';
 import {roomArt,deskArt,itemArt} from './room-art.js';
+import {flag} from './assets.js';
 export {floorPose,wristWorld,reachPose,gripWorld} from './room-motion.js';
 const line=points=>points.map(p=>p.join(',')).join(' ');
 export class RoomRenderer{
@@ -17,14 +18,17 @@ export class RoomRenderer{
   get position(){return this.state.hero.position;}
   get facing(){return this.state.hero.facing;}
   phase(value,message){this.scene.dataset.phase=value;this.onPhase(message);}
-  synchronize(){this.previewItems=null;this.effects={};this.pose=this.state?.held?carryPose():clonePose(POSES.stand);this.carry={angle:0,open:0};this.turn=null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
-  cancel(){this.generation++;this.route=[];this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
+  synchronize(){this.previewItems=null;this.effects={};this.pose=this.state?.held?carryPose():clonePose(POSES.stand);this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
+  cancel(){this.generation++;this.route=[];this.navigation=null;this.heading=null;this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
   setDebug(value){this.debug=value;this.draw();}
   tween(duration,update){const generation=this.generation;duration=this.reduced?Math.min(duration,180):duration;return new Promise(resolve=>{const start=performance.now();const tick=now=>{if(generation!==this.generation){resolve(false);return;}const t=Math.min(1,(now-start)/duration);update(t);this.draw();if(t<1)requestAnimationFrame(tick);else resolve(true);};requestAnimationFrame(tick);});}
   poseTo(target,duration=650){const from=clonePose(this.pose);return this.tween(duration,t=>{this.pose=mixPose(from,target,ease(t));});}
   async turnTo(facing){
-    if(facing===this.facing)return true;const from=this.facing;this.phase('turn','Герой поворачивается к цели.');this.turn={from,to:facing,t:0};
-    if(!await this.tween(220,t=>{this.turn.t=ease(t);}))return false;this.state.moveHero(this.position,facing);this.turn=null;this.draw();return true;
+    if(facing===this.facing)return true;const from=this.poseFacing||this.facing,source=clonePose(this.pose),target=this.state.held?carryPose():clonePose(POSES.stand),converted=poseInFacing(source,from,facing);
+    for(const key of ['lk','la','lf','rk','ra','rf'])target[key]=[...converted[key]];
+    const targetInFrom=poseInFacing(target,facing,from);this.phase('turn','Герой поворачивается к цели.');this.turn={from,to:facing,t:0};
+    if(!await this.tween(220,t=>{this.turn.t=ease(t);this.pose=mixPose(source,targetInFrom,ease(t));this.poseFacing=from;}))return false;
+    this.state.moveHero(this.position,facing);this.pose=target;this.poseFacing=facing;this.turn=null;this.draw();return true;
   }
   async settle(){
     const target=this.state.held?carryPose():clonePose(POSES.stand);
@@ -37,19 +41,24 @@ export class RoomRenderer{
   }
   async confused(){this.question=true;this.phase('missing','Не получилось. Проверь предмет и доступность места.');const ok=await this.tween(650,()=>{});if(ok){this.question=false;this.draw();}return ok;}
   async moveTo(context){
-    this.route=context.route;let traveled=0;const total=routeLength(this.route),initial=clonePose(this.pose);
-    for(let i=1;i<this.route.length;i++){
-      const pair=[this.route[i-1],this.route[i]],length=routeLength(pair);if(length<.01)continue;
-      if(!await this.turnTo(facingFor(...pair)))return false;this.phase('walk','Герой обходит препятствия и идёт к цели.');
-      if(!await this.tween(Math.max(180,length/105*1000),t=>{
-        const at=traveled+travelProgress(t)*length,frame=walkingFrame(this.route,at,this.facing);
-        this.state.moveHero(frame.position);this.pose=at<10?mixPose(initial,frame.pose,ease(at/10)):frame.pose;
-        if(this.state.held)this.pose.rw=[432,495];this.contacts=frame.contacts;
+    this.route=context.route;
+    const total=routeLength(this.route),duration=Math.max(220,total/105*1000);
+    if(total>.1||!this.navigation)this.navigation={start:[...this.position],end:[...context.position],raw:context.rawRoute||this.route,optimized:context.optimizedRoute||this.route,points:this.route,candidates:context.candidates||[]};
+    if(total>.1){
+      this.interactionSurface=null;
+      if(!await this.turnTo(facingDirection(routeDirection(this.route,0),this.facing)))return false;
+      const initial=clonePose(this.pose),initialFacing=this.poseFacing;this.phase('walk','Герой идёт к цели по короткому безопасному пути.');
+      if(!await this.tween(duration,t=>{
+        const at=travelProgress(t)*total,elapsed=t*duration,direction=routeDirection(this.route,at),desired=facingDirection(direction,this.turn?.to||this.facing);this.heading=direction;
+        if(this.turn?.walking){const p=Math.min(1,(elapsed-this.turn.started)/190);this.turn.t=ease(p);if(p>=1){this.state.moveHero(this.position,this.turn.to);this.turn=null;}}
+        if(!this.turn&&desired!==this.facing)this.turn={from:this.facing,to:desired,t:0,started:elapsed,walking:true};
+        const frame=walkingBlend(this.route,at,this.turn?.from||this.facing,this.turn?.to||this.facing,this.turn?.t||0,Boolean(this.state.held));
+        this.state.moveHero(frame.position);this.poseFacing=frame.poseFacing;this.pose=at<10?mixPose(poseInFacing(initial,initialFacing,frame.poseFacing),frame.pose,ease(at/10)):frame.pose;this.contacts=frame.contacts;
       }))return false;
-      traveled+=length;this.state.moveHero(pair[1]);if(!await this.settle())return false;
-    }
-    this.state.moveHero(context.position);if(total<.01)this.pose=this.state.held?carryPose():clonePose(POSES.stand);
-    if(!await this.turnTo(context.facing))return false;this.phase('idle','Герой у цели.');this.draw();return true;
+      if(this.turn){const start=this.turn.t,to=this.turn.to;if(!await this.tween(140,t=>{this.turn.t=lerp(start,1,ease(t));}))return false;this.pose=poseInFacing(this.pose,this.poseFacing,to);this.poseFacing=to;this.state.moveHero(this.position,to);this.turn=null;}
+      this.state.moveHero(context.position);if(!await this.turnTo(context.facing)||!await this.settle())return false;
+    }else if(!await this.turnTo(context.facing))return false;
+    this.heading=null;this.phase('idle','Герой у цели.');this.draw();return true;
   }
   async run(plan){
     const id=plan.item;this.previewItems={...plan.before};this.effects={};
@@ -70,12 +79,14 @@ export class RoomRenderer{
     if(action==='move_to')return this.moveTo(context);
     if(action==='take'||action==='put'){
       if(!await this.turnTo(context.facing))return false;
+      this.interactionSurface=context.location.surface;
       const base=context.location.kind==='floor'?floorPose():POSES.stand,reach=reachPose(this.position,context.grip,base,this.facing);
       this.phase('reach',action==='take'?'Кисть приближается к предмету.':'Возвращаем предмет к его опоре.');
       if(!await this.poseTo(reach,800))return false;
       contact();this.carry={angle:0,open:0};this.phase('contact',action==='take'?'Контакт: предмет теперь в руке.':'Контакт: предмет снова на поверхности.');this.draw();
       if(!await this.tween(140,()=>{}))return false;
       if(!await this.poseTo(action==='take'?carryPose():POSES.stand,650))return false;
+      if(action==='put')this.interactionSurface=null;
       this.phase('idle',action==='take'?'Предмет в руке. Его можно использовать или положить.':'Предмет на месте.');this.draw();return true;
     }
     if(action==='use')return this.useHeld(id);
@@ -98,27 +109,40 @@ export class RoomRenderer{
     }
     if(!await this.poseTo(carryPose(),650))return false;object.state={open:0,using:false};this.carry={angle:0,open:0};this.phase('idle','Предмет остаётся в руке.');this.draw();return true;
   }
-  heroFrame(facing,opacity=1){
+  heroFrame(facing,opacity=1,part='all'){
     const p=project(this.position),scale=heroScale(this.position),sign=facingSign(facing),held=this.state.held;
-    return `<g opacity="${opacity}"><g transform="translate(${p.join(' ')}) scale(${scale*sign} ${scale}) translate(-370 -675)">${this.hero.roomMarkup(this.pose,{using:Boolean(held),question:this.question,facing})}</g></g>`;
+    const backBlend=this.turn?lerp(this.turn.from==='back'?1:0,this.turn.to==='back'?1:0,this.turn.t):(facing==='back'?1:0);
+    if(!this.frameLayers.has(facing))this.frameLayers.set(facing,this.hero.roomLayers(poseInFacing(this.pose,this.poseFacing||this.facing,facing),{using:Boolean(held),question:this.question,facing,hideFlag:true,backBlend}));
+    const layers=this.frameLayers.get(facing),markup=part==='all'?layers.body+layers.arm:layers[part];
+    return `<g opacity="${opacity}"><g transform="translate(${p.join(' ')}) scale(${scale*sign} ${scale}) translate(-370 -675)">${markup}</g></g>`;
+  }
+  flagMarkup(){
+    const code=this.hero.look.flag;if(!code)return '';
+    const at=facing=>{const p=poseInFacing(this.pose,this.poseFacing||this.facing,facing),a=flagAnchor(p);return worldPoint(this.position,[a.x,a.y],facing);};
+    let point=at(this.facing),sign=facingSign(this.facing);if(this.turn){const a=at(this.turn.from),b=at(this.turn.to);point=a.map((v,i)=>lerp(v,b[i],this.turn.t));sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);}
+    const scale=heroScale(this.position)*.69;return `<g data-slot="flag" data-flag="${code}" transform="translate(${point.join(' ')}) scale(${scale*sign} ${scale})">${flag(code)}</g>`;
   }
   heldMarkup(){
-    const id=this.state.held;if(!id)return '';let wrist=wristWorld(this.position,this.pose,this.facing),sign=facingSign(this.facing);
-    if(this.turn){const a=wristWorld(this.position,this.pose,this.turn.from),b=wristWorld(this.position,this.pose,this.turn.to);wrist=a.map((v,i)=>lerp(v,b[i],this.turn.t));sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);}
+    const id=this.state.held;if(!id)return '';const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);let sign=facingSign(this.facing);
+    if(this.turn)sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);
     const grip=this.state.objects[id].grip;
     return `<g data-held="${id}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true})}</g>`;
   }
   draw(){
-    if(!this.layer||!this.visible||!this.state)return;const entries=[],items=this.previewItems||this.state.items;
+    if(!this.layer||!this.visible||!this.state)return;const entries=[],items=this.previewItems||this.state.items;this.frameLayers=new Map();
     const tableDepth=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2])[1];
     if(items.desk){const e=this.effects.desk||{},c=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]);entries.push({id:'desk',depth:tableDepth,html:`<g opacity="${e.opacity??1}" transform="translate(${c.join(' ')}) scale(${e.scale??1}) translate(${-c[0]} ${-c[1]})">${deskArt()}</g>`});}
     for(const id of ['book','water'])if(items[id]&&items[id]!=='hand'){
       const placement=items[id],e=this.effects[id]||{},same=placement===this.state.items[id],location=this.state.objects[id].location,point=e.point||(same?this.state.point(id):itemLocation(id,placement).point);
       entries.push({id,depth:placement==='table'?tableDepth+1:project(same?location.uv:FLOOR_SLOTS[id])[1],html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
     }
-    entries.push({id:'hero',depth:project(this.position)[1],html:(this.turn?this.heroFrame(this.turn.from,1-this.turn.t)+this.heroFrame(this.turn.to,this.turn.t):this.heroFrame(this.facing))+this.heldMarkup()});
+    const heroDepth=project(this.position)[1],overTable=this.interactionSurface==='desk'&&items.desk&&heroDepth<tableDepth+1;
+    const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
+    entries.push({id:'hero',depth:heroDepth,html:frames(overTable?'body':'all')+this.flagMarkup()+(overTable?'':this.heldMarkup())});
+    if(overTable)entries.push({id:'hero-arm',depth:tableDepth+2,html:frames('arm')+this.heldMarkup()});
     entries.sort((a,b)=>a.depth-b.depth);this.layer.innerHTML=entries.map(({id,depth,html})=>`<g data-room-object="${id}" data-depth="${depth.toFixed(1)}">${html}</g>`).join('');
-    this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.held=this.state.held||'';
+    this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.view=this.turn?.to||this.facing;this.scene.dataset.held=this.state.held||'';this.scene.dataset.heading=(this.heading||[0,0]).map(v=>v.toFixed(2)).join(',');
+    if(this.navigation){this.scene.dataset.routeLength=routeLength(this.navigation.points).toFixed(1);this.scene.dataset.rawWaypoints=String(this.navigation.raw.length);}
     this.scene.setAttribute('aria-label',`Комната. ${['desk','book','water'].filter(id=>items[id]).map(id=>({desk:'Стол',book:'Книга',water:'Вода'})[id]).join(', ')||'Пока пусто'}. ${this.state.held?'Предмет в руке. ':''}Герой из первого уровня.`);
     this.overlay.innerHTML=this.debug?this.debugArt(entries):'';
   }
@@ -127,11 +151,16 @@ export class RoomRenderer{
     const dot=(p,label,color='#c54d68')=>`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${color}"/><text x="${p[0]+7}" y="${p[1]-7}">${label}</text>`;
     const targets=['book','water'].map(id=>{const t=this.state.target(id,{returning:this.state.held===id});return t?dot(project(t.position),id+': approach','#4b9173')+dot(t.grip,id+': grip'):'';}).join('');
     const zones=['book','water'].map(id=>['floor','table'].map(place=>{const p=itemLocation(id,place).point;return `<ellipse cx="${p[0]}" cy="${p[1]}" rx="${id==='book'?44:18}" ry="12" fill="#6ca7c215" stroke="#77a0b6" stroke-dasharray="3 3"/>`;}).join('')).join('');
-    const bounds=entries.filter(e=>e.id!=='desk').map(e=>{const p=e.id==='hero'?project(this.position):this.state.point(e.id);if(!p)return '';const scale=e.id==='hero'?heroScale(this.position):1,w=e.id==='hero'?220*scale:e.id==='book'?90:38,h=e.id==='hero'?410*scale:e.id==='book'?50:70;return `<rect x="${p[0]-w/2}" y="${p[1]-h}" width="${w}" height="${h+6}" fill="none" stroke="#a490bc" stroke-dasharray="2 4"/>`;}).join('');
-    const wrist=wristWorld(this.position,this.pose,this.facing);
+    const bounds=entries.filter(e=>['hero','book','water'].includes(e.id)).map(e=>{const p=e.id==='hero'?project(this.position):this.state.point(e.id);if(!p)return '';const scale=e.id==='hero'?heroScale(this.position):1,w=e.id==='hero'?220*scale:e.id==='book'?90:38,h=e.id==='hero'?410*scale:e.id==='book'?50:70;return `<rect x="${p[0]-w/2}" y="${p[1]-h}" width="${w}" height="${h+6}" fill="none" stroke="#a490bc" stroke-dasharray="2 4"/>`;}).join('');
+    const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);
+    const n=this.navigation,origin=project(this.position),heading=this.heading||[0,0],headingLength=Math.hypot(...heading)||1,arrow=[origin[0]+heading[0]/headingLength*32,origin[1]+heading[1]/headingLength*32];
     return `<g font-size="11" font-family="monospace" fill="#60416c" stroke-width="1.4">${this.state.obstacles.map(b=>`<polygon points="${poly(b)}" fill="#d97c9728" stroke="#c54d68" stroke-dasharray="6 4"/>`).join('')}
+      ${this.state.obstacles.map(b=>`<polygon points="${poly({u:b.u-NAV.radius,v:b.v-NAV.radius,w:b.w+NAV.radius*2,d:b.d+NAV.radius*2})}" fill="none" stroke="#d48351" stroke-dasharray="3 3"/>`).join('')}
+      <polygon points="${poly({u:NAV.min,v:NAV.min,w:NAV.max-NAV.min,d:NAV.max-NAV.min})}" fill="none" stroke="#b5b6b2" stroke-dasharray="2 5"/>
       <polygon points="${line([[TABLE.u,TABLE.v],[TABLE.u+TABLE.w,TABLE.v],[TABLE.u+TABLE.w,TABLE.v+TABLE.d],[TABLE.u,TABLE.v+TABLE.d]].map(p=>project(p,TABLE.height)))}" fill="none" stroke="#a490bc" stroke-dasharray="4 4"/>${zones}${bounds}
-      ${this.route?.length?`<polyline points="${line(this.route.map(p=>project(p)))}" fill="none" stroke="#498d74" stroke-width="3"/>${this.route.map(p=>dot(project(p),'','#498d74')).join('')}`:''}${targets}
+      ${n?`<polyline data-nav="raw" points="${line(n.raw.map(p=>project(p)))}" fill="none" stroke="#9997a2" stroke-width="2" stroke-dasharray="3 4"/><polyline data-nav="optimized" points="${line(n.points.map(p=>project(p)))}" fill="none" stroke="#328767" stroke-width="3"/>${n.candidates.map(c=>`<circle cx="${project(c.position)[0]}" cy="${project(c.position)[1]}" r="2.6" fill="#aa9b86"/>`).join('')}${dot(project(n.start),'S','#4c86b6')}${dot(project(n.end),'E','#d08c32')}`:''}${targets}
+      ${this.heading?`<path data-nav="heading" d="M${origin.join(' ')}L${arrow.join(' ')}" fill="none" stroke="#dc8b2e" stroke-width="4"/><circle cx="${arrow[0]}" cy="${arrow[1]}" r="4" fill="#dc8b2e"/>`:''}
+      <text x="90" y="615">S start · E goal · gray A* / green safe path</text>
       ${entries.map((entry,i)=>`<text x="90" y="${635+i*16}">${i+1}. ${entry.id} · depth ${entry.depth.toFixed(1)}</text>`).join('')}
       <text x="420" y="695">hero (${this.position.map(v=>v.toFixed(3)).join(', ')}) ${this.facing}</text>
       <text x="420" y="712">${this.scene.dataset.operation||'idle'} ${this.scene.dataset.item||''} · held: ${this.state.held||'none'}</text>

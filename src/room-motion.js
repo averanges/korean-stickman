@@ -2,16 +2,24 @@ import {POSES,mixPose,articulate,bodyFrame,solveArm} from './geometry.js';
 import {project,heroScale,facingSign,GRIPS,itemLocation} from './room-space.js';
 import {sampleRoute} from './room-navigation.js';
 export const clonePose=pose=>mixPose(pose,pose,0);
+const footOrder=facing=>['left','front'].includes(facing)?1:0;
+export function poseInFacing(pose,from,to){
+  const result=clonePose(pose);
+  if(facingSign(from)!==facingSign(to)){for(const value of Object.values(result))if(Array.isArray(value))value[0]=740-value[0];result.angle=-result.angle;}
+  if(footOrder(from)!==footOrder(to))for(const [a,b] of [['lk','rk'],['la','ra'],['lf','rf']])[result[a],result[b]]=[result[b],result[a]];
+  return result;
+}
 export function floorPose(){return {...clonePose(POSES.stand),h:[406,482],n:[390,544],p:[366,610],lw:[326,604],rw:[430,609],lk:[332,635],rk:[421,625],angle:15};}
 export function localPoint(position,point,facing='right'){const origin=project(position),scale=heroScale(position);return [370+(point[0]-origin[0])/scale*facingSign(facing),675+(point[1]-origin[1])/scale];}
 export function worldPoint(position,point,facing='right'){const origin=project(position),scale=heroScale(position);return [origin[0]+(point[0]-370)*scale*facingSign(facing),origin[1]+(point[1]-675)*scale];}
 export function wristWorld(position,pose,facing='right'){return worldPoint(position,articulate(pose).rw,facing);}
 export function reachPose(position,point,base=POSES.stand,facing='right'){return {...clonePose(base),rw:localPoint(position,point,facing)};}
 export function gripWorld(id,placement){return itemLocation(id,placement).point.map((v,i)=>v+GRIPS[id][i]);}
-export function reachableGrip(position,context){
+export function gripExtension(position,context){
   const pose=reachPose(position,context.grip,context.location.kind==='floor'?floorPose():POSES.stand,context.facing),shoulder=bodyFrame(pose).shoulderRight;
-  return Math.hypot(pose.rw[0]-shoulder[0],pose.rw[1]-shoulder[1])<=141.9;
+  return Math.hypot(pose.rw[0]-shoulder[0],pose.rw[1]-shoulder[1]);
 }
+export function reachableGrip(position,context){return gripExtension(position,context)<=141.9;}
 export function carryPose(){return {...clonePose(POSES.stand),rw:[432,495]};}
 export function useTarget(id,position,facing='right'){
   if(id==='book')return worldPoint(position,[430,475],facing);
@@ -24,17 +32,17 @@ export function walkingFrame(route,at,facing='right'){
   const anchor=(where,side)=>{
     const p=project(sampleRoute(route,where)),a=project(sampleRoute(route,Math.max(0,where-2))),b=project(sampleRoute(route,where+2));
     let dx=b[0]-a[0],dy=b[1]-a[1];if(Math.hypot(dx,dy)<.001){const start=project(route[0]),end=project(route.at(-1));dx=end[0]-start[0];dy=end[1]-start[1];}
-    const length=Math.hypot(dx,dy)||1,normal=[-dy/length,dx/length];if(normal[0]*facingSign(facing)<0){normal[0]*=-1;normal[1]*=-1;}
+    const length=Math.hypot(dx,dy)||1,normal=[-dy/length,dx/length];
     return [p[0]+normal[0]*side*7,p[1]+normal[1]*side*7];
   };
   const foot=(phaseShift,side)=>{
     const phaseDistance=at+phaseShift*stride,cycle=Math.floor(phaseDistance/stride),phase=phaseDistance/stride-cycle;
     const plantedDistance=cycle*stride-phaseShift*stride+stride*.22;
     const swing=phase>.56?(phase-.56)/.44:0,e=swing*swing*(3-2*swing);
-    const a=anchor(plantedDistance,side),b=anchor(plantedDistance+stride,side),floor=a.map((v,i)=>v+(b[i]-v)*e);
+    const floor=anchor(plantedDistance+stride*e,side);
     return {floor,screen:[floor[0],floor[1]-Math.sin(swing*Math.PI)*12],planted:phase<=.56};
   };
-  const left=foot(0,-1),right=foot(.5,1),lf=localPoint(position,left.screen,facing),rf=localPoint(position,right.screen,facing);
+  const first=foot(0,-1),second=foot(.5,1),[left,right]=footOrder(facing)?[second,first]:[first,second],lf=localPoint(position,left.screen,facing),rf=localPoint(position,right.screen,facing);
   pose.lf=lf;pose.rf=rf;pose.la=[lf[0]-12,lf[1]-4];pose.ra=[rf[0]-12,rf[1]-4];
   // Keep planted contacts fixed and bend the body rather than stretching the two leg bones.
   for(let i=0;i<55;i++){
@@ -44,4 +52,10 @@ export function walkingFrame(route,at,facing='right'){
   const f=bodyFrame(pose),side=['left','right'].includes(facing);pose.lk=solveArm(f.hipLeft,pose.la,side?-1:1,76,77);pose.rk=solveArm(f.hipRight,pose.ra,-1,76,77);
   const swing=Math.sin(at/stride*Math.PI*2);pose.lw[0]+=swing*18;pose.rw[0]-=swing*18;
   return {position,pose,contacts:{left,right}};
+}
+export function walkingBlend(route,at,from,to=from,amount=0,holding=false){
+  const a=walkingFrame(route,at,from);if(holding)a.pose.rw=[432,495];
+  if(from===to||amount<=0)return {...a,poseFacing:from};
+  const b=walkingFrame(route,at,to);if(holding)b.pose.rw=[432,495];
+  return {...a,pose:mixPose(a.pose,poseInFacing(b.pose,to,from),amount),poseFacing:from};
 }

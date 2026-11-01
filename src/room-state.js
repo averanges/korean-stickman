@@ -1,6 +1,6 @@
 import {TABLE,FLOOR_SLOTS,TABLE_SLOTS,START,GRIPS,project,approach,distance,facingFor} from './room-space.js';
-import {planRoute,walkable} from './room-navigation.js';
-import {reachableGrip} from './room-motion.js';
+import {planRoute,walkable,chooseRoute,NAV} from './room-navigation.js';
+import {reachableGrip,gripExtension} from './room-motion.js';
 export * from './room-space.js';
 export const ROOM_STORAGE_KEY='korean-stickman.room.v1';
 export const ROOM_ITEMS={desk:'Стол',book:'Книга',water:'Вода'};
@@ -53,10 +53,40 @@ export class RoomState{
   repairSupports(){for(const id of ['book','water']){const o=this.objects[id];if(!this.items.desk){if(o.location.kind==='table')o.location=locationFor(id,'floor');if(o.returnTo?.kind==='table')o.returnTo=locationFor(id,'floor');}}}
   moveHero(position,facing=this.hero.facing){this.hero.position=[...position];this.hero.facing=facing;}
   point(id,{returning=false}={}){const o=this.objects[id],loc=returning?o.returnTo:o.location;return loc&&['floor','table'].includes(loc.kind)?project(loc.uv,loc.height):null;}
-  target(id,{returning=false}={}){
+  contextAt(id,position,{returning=false}={}){
     const o=this.objects[id],loc=returning?o.returnTo:o.location;if(!loc||!['floor','table'].includes(loc.kind))return null;
-    const slot=(loc.kind==='table'?TABLE_SLOTS:FLOOR_SLOTS)[id],position=id==='desk'?approach('book','table'):approach(id,loc.kind).map((v,i)=>v+(loc.uv[i]-slot[i])),point=id==='desk'?project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2],TABLE.height):this.point(id,{returning});
-    return {position,point,grip:id==='desk'?null:point.map((v,i)=>v+o.grip[i]),facing:facingFor(position,loc.uv),location:copy(loc)};
+    const point=id==='desk'?project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2],TABLE.height):this.point(id,{returning});
+    return {position:[...position],point,grip:id==='desk'?null:point.map((v,i)=>v+o.grip[i]),facing:id==='desk'?facingFor(position,[TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]):point[0]<project(position)[0]?'left':'right',location:copy(loc)};
+  }
+  canInteract(id,context){
+    if(!context||!walkable(context.position,this.obstacles))return false;
+    if(id==='desk')return false;
+    if(distance(context.position,context.location.uv)>(context.location.kind==='table'?.24:.18))return false;
+    if(context.location.kind==='floor'&&(!walkable(context.location.uv,this.obstacles,0)||distance(project(context.position),project(context.location.uv))<(id==='book'?45:27)))return false;
+    return reachableGrip(context.position,context);
+  }
+  targets(id,options={}){
+    const o=this.objects[id],loc=options.returning?o.returnTo:o.location;if(!loc||!['floor','table'].includes(loc.kind))return [];
+    const positions=[],slot=(loc.kind==='table'?TABLE_SLOTS:FLOOR_SLOTS)[id];
+    if(id==='desk'||loc.kind==='table'){
+      const pad=NAV.radius+.012;
+      for(const t of [0,.15,.3,.45,.6,.75,.9,1]){
+        const u=TABLE.u+TABLE.w*t,v=TABLE.v+TABLE.d*t;
+        positions.push([TABLE.u-pad,v],[TABLE.u+TABLE.w+pad,v],[u,TABLE.v-pad],[u,TABLE.v+TABLE.d+pad]);
+      }
+    }else for(const radius of [.12,.16])for(let n=0;n<24;n++)positions.push([loc.uv[0]+Math.cos(n*Math.PI/12)*radius,loc.uv[1]+Math.sin(n*Math.PI/12)*radius]);
+    // Keep old calibrated points valid for saves and ongoing step-by-step sequences.
+    positions.push(id==='desk'?approach('book','table'):approach(id,loc.kind).map((v,i)=>v+(loc.uv[i]-slot[i])));
+    const current=this.contextAt(id,this.hero.position,options);
+    if(id==='desk'?positions.some(p=>distance(p,this.hero.position)<.025):this.canInteract(id,current))positions.unshift([...this.hero.position]);
+    let targets=positions.filter((p,i,a)=>walkable(p,this.obstacles)&&a.findIndex(q=>distance(p,q)<.001)===i).map(p=>this.contextAt(id,p,options)).filter(c=>id==='desk'||(this.canInteract(id,c)&&(distance(c.position,this.hero.position)<.001||gripExtension(c.position,c)>=35)));
+    if(id==='desk'){
+      const onTop=['book','water'].filter(child=>this.items[child]==='table'),comfortable=targets.filter(t=>onTop.some(child=>{const context=this.contextAt(child,t.position);return this.canInteract(child,context)&&gripExtension(t.position,context)>=35;}));
+      if(comfortable.length)targets=comfortable;
+    }return targets;
+  }
+  target(id,options={}){
+    return this.targets(id,options).sort((a,b)=>distance(project(this.hero.position),project(a.position))-distance(project(this.hero.position),project(b.position)))[0]||null;
   }
   describe(id){const o=this.objects[id];return {...copy(o),held:o.location.kind==='hand',interaction:this.target(id,{returning:o.location.kind==='hand'})};}
   plan(command){
@@ -78,13 +108,17 @@ export class RoomState{
       const target=this.target(id);if(!target||distance(this.hero.position,target.position)>.025)return fail('Сначала подойди к объекту.','too-far');
       if(Boolean(o.state.open)===(action==='open'))return fail(action==='open'?'Объект уже открыт.':'Объект уже закрыт.','already');return {ok:true,...target};
     }
-    if(action==='move_to'){const target=this.target(id,{returning:operation.returning});if(!target)return fail('Предмет уже в руке. Укажи предмет в комнате.','held');const route=planRoute(this.hero.position,target.position,this.obstacles);return route.ok?{ok:true,...target,route:route.points}:route;}
+    if(action==='move_to'){
+      if(o.location.kind==='hand'&&!operation.returning)return fail('Предмет уже в руке. Укажи предмет в комнате.','held');
+      const candidates=this.targets(id,{returning:operation.returning}),chosen=chooseRoute(this.hero.position,candidates,this.obstacles);
+      return chosen.ok?{ok:true,...chosen.target,route:chosen.route.points,rawRoute:chosen.route.rawPoints,optimizedRoute:chosen.route.optimizedPoints,candidates:chosen.candidates}:chosen;
+    }
     if(action==='take'){
       if(this.held)return fail(this.held===id?'Этот предмет уже в руке.':'Рука занята. Сначала положи удерживаемый предмет.','held');
-      const target=this.target(id);if(!target||distance(this.hero.position,target.position)>.025||!reachableGrip(this.hero.position,target)||!walkable(this.hero.position,this.obstacles)||(o.location.kind==='floor'&&!walkable(o.location.uv,this.obstacles,0)))return fail('Сначала подойди к предмету: /move_to '+id,'too-far');return {ok:true,...target};
+      const target=this.contextAt(id,this.hero.position);if(!this.canInteract(id,target))return fail('Сначала подойди к предмету: /move_to '+id,'too-far');return {ok:true,...target};
     }
     if(this.held!==id)return fail('Сначала возьми предмет: /take '+id,'not-held');
-    if(action==='put'){const target=this.target(id,{returning:true});if(!target||distance(this.hero.position,target.position)>.025||!reachableGrip(this.hero.position,target)||!walkable(this.hero.position,this.obstacles))return fail('До места возврата далеко. Подойди к исходной поверхности.','too-far');return {ok:true,...target};}
+    if(action==='put'){const target=this.contextAt(id,this.hero.position,{returning:true});if(!this.canInteract(id,target))return fail('До места возврата далеко. Подойди к исходной поверхности.','too-far');return {ok:true,...target};}
     return {ok:true};
   }
   contact(operation){

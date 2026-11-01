@@ -45,7 +45,7 @@ test('automatic book and water use compose the same operations, retaining actual
   const state=new RoomState(memory()),events=[];create(state,'desk','book','water');const queue=new RoomController(state,fakeRenderer(state,events));
   const reading=queue.run(parseRoom('책을 읽어요')),drinking=queue.run(parseRoom('물을 마셔요'));await Promise.all([reading,drinking]);
   assert.deepEqual(events,['move_to:book','take:book','use:book','move_to:book','put:book','move_to:water','take:water','use:water','move_to:water','put:water']);
-  assert.deepEqual(state.items,{desk:'floor',book:'table',water:'table'});assert.deepEqual(state.hero.position,approach('water','table'));assert.equal(queue.busy,false);
+  assert.deepEqual(state.items,{desk:'floor',book:'table',water:'table'});assert.ok(state.canInteract('water',state.contextAt('water',state.hero.position)));assert.notDeepEqual(state.hero.position,START);assert.equal(queue.busy,false);
 });
 test('contact transfers ownership only after the wrist reaches floor or tabletop grip, then restores exact anchor',async()=>{
   for(const surface of ['floor','table'])for(const id of ['book','water']){
@@ -65,7 +65,7 @@ test('held state and position survive reload; removing support preserves ownersh
   const storage=memory(),state=new RoomState(storage);create(state,'desk','book');state.moveHero(approach('book','table'));state.contact({action:'take',item:'book'});
   const restored=new RoomState(storage);assert.equal(restored.held,'book');assert.equal(restored.items.book,'hand');assert.deepEqual(restored.hero.position,state.hero.position);
   restored.commit(restored.plan({action:'remove',item:'desk'}));assert.equal(restored.items.book,'hand');assert.equal(restored.objects.book.returnTo.kind,'floor');
-  const queue=new RoomController(restored,fakeRenderer(restored));await queue.run(parseRoom('책을 읽어요'));assert.equal(restored.items.book,'floor');assert.deepEqual(restored.hero.position,approach('book','floor'));
+  const queue=new RoomController(restored,fakeRenderer(restored));await queue.run(parseRoom('책을 읽어요'));assert.equal(restored.items.book,'floor');assert.ok(restored.canInteract('book',restored.contextAt('book',restored.hero.position)));
   const final=new RoomState(storage);assert.deepEqual(final.items,restored.items);assert.deepEqual(final.hero,restored.hero);
 });
 test('old saves migrate; malformed ownership cannot restore two held props or ghost tabletop items',()=>{

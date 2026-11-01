@@ -133,7 +133,7 @@ $('#reset').onclick=()=>{
 function changeLevel(home){
   revision++;speech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V2.2':'Korean Stickman — Создай своего героя';
+  document.title=home?'Korean Stickman — Мой дом · V2.3':'Korean Stickman — Создай своего героя';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';

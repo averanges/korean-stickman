@@ -43,10 +43,11 @@ export class Renderer {
   // The portrait uses both character layers, preserving the existing world screen.
   portraitMarkup(){return this.actor.innerHTML+this.arm.innerHTML;}
   // Level 2 uses the same skeleton, face and equipped appearance in its own scene.
-  roomMarkup(pose,{using=false,question=false,facing='right'}={}){
-    const previous={asleep:this.asleep,question:this.question,hideHandForSearch:this.hideHandForSearch,roomView:this.roomView};
-    this.asleep=false;this.question=question;this.hideHandForSearch=using;this.roomView=facing;this.draw(pose);
-    const markup=this.portraitMarkup();Object.assign(this,previous);return markup;
+  roomMarkup(pose,options={}){const layers=this.roomLayers(pose,options);return layers.body+layers.arm;}
+  roomLayers(pose,{using=false,question=false,facing='right',hideFlag=false,backBlend}={}){
+    const previous={asleep:this.asleep,question:this.question,hideHandForSearch:this.hideHandForSearch,roomView:this.roomView,roomHideFlag:this.roomHideFlag,roomBackBlend:this.roomBackBlend};
+    this.asleep=false;this.question=question;this.hideHandForSearch=using;this.roomView=facing;this.roomHideFlag=hideFlag;this.roomBackBlend=backBlend;this.draw(pose);
+    const layers={body:this.actor.innerHTML,arm:this.arm.innerHTML};Object.assign(this,previous);return layers;
   }
   tween(duration,update){
     const generation=this.generation;this.animating=true;
@@ -61,7 +62,7 @@ export class Renderer {
     });
   }
   move(target,duration){const from=copyPose(this.pose);return this.tween(duration,t=>{this.pose=mixPose(from,target,ease(t));this.draw();});}
-  anchor(slot,pose=this.pose,look=this.look){const at=attachment(slot,pose,look);return slot==='back'&&this.roomView==='back'?{...at,x:pose.n[0],y:pose.n[1]+95}:at;}
+  anchor(slot,pose=this.pose,look=this.look){const at=attachment(slot,pose,look),blend=this.roomBackBlend??(this.roomView==='back'?1:0);return slot==='back'&&blend?{...at,x:lerp(at.x,pose.n[0],blend),y:lerp(at.y,pose.n[1]+95,blend)}:at;}
   placed(id,slot,pose){
     return !id||this.hideSlot===slot||(slot==='hand'&&this.hideHandForSearch)?'':`<g data-slot="${slot}" data-asset="${id}" transform="${transformAt(this.anchor(slot,pose))}">${asset(id)}</g>`;
   }
@@ -72,8 +73,8 @@ export class Renderer {
     const torso=`M${nx-sx*14} ${ny-sy*14}Q${lerp(nx,px,.5)-sx*22} ${lerp(ny,py,.5)-sy*22} ${px-sx*19} ${py-sy*19}Q${px-sy*10} ${py+sx*10} ${px+sx*19} ${py+sy*19}Q${lerp(nx,px,.5)+sx*17} ${lerp(ny,py,.5)+sy*17} ${nx+sx*14} ${ny+sy*14}Z`;
     const hair=this.look.hair==='bob'?'<path d="M-54-25Q-80 7-64 64L-35 54L-30-10M52-25Q76 7 64 62L38 53L29-10" fill="#49423f" stroke="#25272c" stroke-width="5"/>':'';
     const fringe=this.look.hair==='tuft'?'<path d="M-48-35Q-25-76 14-64L42-46L13-39L-3-49L-15-36L-29-43Z" fill="#49423f" stroke="#25272c" stroke-width="3"/>':this.look.hair==='bob'?'<path d="M-53-28Q-50-64-7-63Q36-67 53-30Q26-32 7-47Q-14-28-53-28Z" fill="#49423f" stroke="#25272c" stroke-width="3"/>':'';
-    const back=this.roomView==='back',front=this.roomView==='front';
-    const eyes=back?'':p.eye<.15?'<path d="M-16 7Q-8 17 0 7M20 5Q28 15 36 5" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="${front?-18:-6}" cy="9" rx="4" ry="${6*p.eye}" fill="#25272c"/><ellipse cx="${front?18:27}" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`;
+    const back=this.roomView==='back',front=this.roomView==='front',side=['left','right'].includes(this.roomView);
+    const eyes=back?'':side?(p.eye<.15?'<path d="M20 7Q28 15 36 7" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="27" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`):p.eye<.15?'<path d="M-16 7Q-8 17 0 7M20 5Q28 15 36 5" fill="none" stroke="#25272c" stroke-width="5"/>':`<ellipse cx="${front?-18:-6}" cy="9" rx="4" ry="${6*p.eye}" fill="#25272c"/><ellipse cx="${front?18:27}" cy="7" rx="4" ry="${6*p.eye}" fill="#25272c"/>`;
     this.actor.dataset.pose=this.asleep?'sleeping':this.animating?'moving':'standing';
     this.actor.innerHTML=`<ellipse cx="${this.asleep?px+16:(p.la[0]+p.ra[0])/2+10}" cy="681" rx="75" ry="11" fill="#31313d" opacity=".08"/>
       <g stroke-linecap="round" stroke-linejoin="round">${back?'':this.placed(this.look.back,'back',p)}
@@ -82,7 +83,7 @@ export class Renderer {
       ${back?this.placed(this.look.back,'back',p):this.placed(this.look.body,'body',p)}
       <g data-part="head" transform="translate(${hx} ${hy}) rotate(${p.angle})">${hair}<ellipse rx="62" ry="62" fill="${back&&this.look.hair?'#49423f':'#fff'}" stroke="#25272c" stroke-width="7"/>${back?'':fringe}${eyes}
       ${back?'':`<path d="${this.asleep?'M11 32Q18 28 24 32':this.question?'M11 31Q18 25 25 30':front?'M-13 28Q0 41 15 28':'M6 30Q18 42 31 27'}" fill="none" stroke="#25272c" stroke-width="3.5"/>`}${this.placedHead()}</g>
-      ${this.look.flag?`<g data-slot="flag" data-flag="${this.look.flag}" transform="${transformAt(flagAnchor(p))}">${flag(this.look.flag)}</g>`:''}
+      ${this.look.flag&&!this.roomHideFlag?`<g data-slot="flag" data-flag="${this.look.flag}" transform="${transformAt(flagAnchor(p))}">${flag(this.look.flag)}</g>`:''}
       ${this.question?`<text x="${hx+73}" y="${hy-72}" font-family="Segoe UI,sans-serif" font-size="45" font-weight="700" fill="#dfad43">?</text>`:''}
       ${this.asleep?`<g class="sleep-z" transform="translate(${hx+60} ${hy-78}) rotate(-14)"><text fill="#454448" font-size="37" font-style="italic" font-weight="700">Z<tspan dy="-11" font-size="28">z</tspan><tspan dy="-8" font-size="20">z…</tspan></text></g>`:''}</g>`;
     this.arm.innerHTML=`<g data-part="front-arm" stroke-linecap="round" stroke-linejoin="round">${limb([frame.shoulderRight,p.re,p.rw])}${this.placed(this.look.hand,'hand',p)}</g>`;
