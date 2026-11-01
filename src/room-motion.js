@@ -22,9 +22,11 @@ export function gripExtension(position,context){
 export function reachableGrip(position,context){return gripExtension(position,context)<=141.9;}
 export function carryPose(){return {...clonePose(POSES.stand),rw:[432,495]};}
 export function useTarget(id,position,facing='right'){
-  if(id==='book')return worldPoint(position,[430,475],facing);
+  if(['book','phone'].includes(id))return worldPoint(position,[430,475],facing);
+  if(id==='apple')return worldPoint(position,[382,403],facing);
   const mouth=worldPoint(position,[379,392],facing),sign=facingSign(facing),angle=-65*sign*Math.PI/180;
   // Cap is 40 px above the item's grip. Choose wrist from the cap, not a guessed arm offset.
+  if(id==='milk'){const a=-65*Math.PI/180;return [mouth[0]-sign*(9*Math.cos(a)+30*Math.sin(a)),mouth[1]-(9*Math.sin(a)-30*Math.cos(a))];}
   return [mouth[0]-40*Math.sin(angle),mouth[1]+40*Math.cos(angle)];
 }
 export function walkingFrame(route,at,facing='right'){

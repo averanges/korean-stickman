@@ -1,3 +1,6 @@
+import {ROOM_ITEMS,isFurniture,furnitureCenter} from './room-catalog.js';
+import {furnitureArt} from './room-furniture.js';
+import {restPose} from './room-postures.js';
 import {POSES,mixPose,ease,lerp,flagAnchor} from './geometry.js';
 import {TABLE,FLOOR_SLOTS,project,itemLocation,heroScale,facingSign,facingDirection,landingPoint} from './room-space.js';
 import {routeLength,travelProgress,routeDirection,NAV} from './room-navigation.js';
@@ -19,7 +22,7 @@ export class RoomRenderer{
   get position(){return this.state.hero.position;}
   get facing(){return this.state.hero.facing;}
   phase(value,message){this.scene.dataset.phase=value;this.onPhase(message);}
-  synchronize(){this.previewItems=null;this.effects={};this.pose=this.state?.held?carryPose():clonePose(POSES.stand);this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
+  synchronize(){this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
   cancel(){this.generation++;this.route=[];this.navigation=null;this.heading=null;this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
   setDebug(value){this.debug=value;this.draw();}
   tween(duration,update){const generation=this.generation;duration=this.reduced?Math.min(duration,180):duration;return new Promise(resolve=>{const start=performance.now();const tick=now=>{if(generation!==this.generation){resolve(false);return;}const t=Math.min(1,(now-start)/duration);update(t);this.draw();if(t<1)requestAnimationFrame(tick);else resolve(true);};requestAnimationFrame(tick);});}
@@ -62,9 +65,9 @@ export class RoomRenderer{
     this.heading=null;this.phase('idle','Герой у цели.');this.draw();return true;
   }
   async run(plan){
-    const id=plan.item;this.previewItems={...plan.before};this.effects={};
+    const id=plan.item;this.previewItems={...plan.before};this.previewLocations=plan.action==='create'?plan.locations:null;this.effects={};
     if(plan.action==='create'){
-      this.previewItems={...plan.next};const final=id==='desk'?project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]):itemLocation(id,plan.next[id]).point;
+      this.previewItems={...plan.next};const loc=plan.locations?.[id];const final=isFurniture(id)?project(furnitureCenter(id)):(loc?project(loc.uv,loc.height):itemLocation(id,plan.next[id]).point);
       this.phase('appear','Предмет появляется в выбранном месте.');
       return this.tween(650,t=>{this.effects[id]={opacity:ease(t),scale:id==='desk'?.94+.06*ease(t):1,point:landingPoint(final,t)};});
     }
@@ -78,6 +81,19 @@ export class RoomRenderer{
   async perform(operation,context,{contact}){
     const {action,item:id}=operation;this.scene.dataset.operation=action;this.scene.dataset.item=id;
     if(action==='move_to')return this.moveTo(context);
+    if(['sit','lie_down','sleep','stand_up'].includes(action)){
+      if(action!=='stand_up'&&!await this.turnTo('right'))return false;
+      const posture={sit:'sitting',lie_down:'lying',sleep:'sleeping',stand_up:'standing'}[action];
+      this.phase(action,action==='stand_up'?'Герой встаёт рядом с мебелью.':'Герой устраивается удобнее.');
+      this.restingSupport=action==='stand_up'?this.state.hero.support:id;
+      if(!await this.poseTo(restPose(this.state,posture,action==='stand_up'?null:id),1100))return false;
+      contact();this.restingSupport=null;this.poseFacing='right';this.phase('idle',posture==='sleeping'?'Тихий час. Zzz…':posture==='sitting'?'Герой сидит.':posture==='lying'?'Герой лежит.':'Герой встал.');this.draw();return true;
+    }
+    if(action==='toggle'){
+      const pose=reachPose(this.position,context.grip,POSES.stand,this.facing);
+      this.phase('switch','Герой нажимает выключатель.');if(!await this.poseTo(pose,650))return false;contact();this.draw();if(!await this.tween(180,()=>{}))return false;
+      const done=await this.poseTo(POSES.stand,500);this.phase('idle','Свет переключён.');return done;
+    }
     if(action==='take'||action==='put'){
       if(!await this.turnTo(context.facing))return false;
       this.interactionSurface=context.location.surface;
@@ -96,19 +112,26 @@ export class RoomRenderer{
   }
   async useHeld(id){
     if(!['left','right'].includes(this.facing)&&!await this.turnTo('right'))return false;
-    const object=this.state.objects[id],point=useTarget(id,this.position,this.facing),use=reachPose(this.position,point,POSES.stand,this.facing);
-    use.angle=id==='book'?10:0;use.eye=id==='water'?.12:1;object.state.using=true;
+    const object=this.state.objects[id],kind=object.use,point=useTarget(id,this.position,this.facing),use=reachPose(this.position,point,POSES.stand,this.facing);
+    use.angle=id==='book'?10:0;use.eye=kind==='drink'?.12:1;object.state.using=true;
     this.phase('lift','Герой поднимает удерживаемый предмет.');if(!await this.poseTo(use,700))return false;
     if(id==='book'){
       this.phase('open-book','Книга раскрывается.');if(!await this.tween(450,t=>{this.carry.open=ease(t);object.state.open=this.carry.open;}))return false;
       this.phase('read','책을 읽어요 — герой читает книгу.');if(!await this.tween(1500,t=>{this.pose=clonePose(use);this.pose.angle+=Math.sin(t*Math.PI*2)*1.5;}))return false;
       this.phase('close-book','Книга закрывается.');if(!await this.tween(450,t=>{this.carry.open=1-ease(t);object.state.open=this.carry.open;}))return false;
+    }else if(kind==='screen'){
+      this.phase('phone','Герой смотрит на экран.');this.carry.lit=true;
+      if(!await this.tween(1600,t=>{this.pose=clonePose(use);this.pose.rw[1]+=Math.sin(t*Math.PI*6)*3;}))return false;
+      this.carry.lit=false;
+    }else if(kind==='eat'){
+      this.phase('eat','Герой ест яблоко.');
+      if(!await this.tween(1800,t=>{this.pose=clonePose(use);this.pose.h[1]+=Math.sin(t*Math.PI*6)*2;this.carry.remaining=1-Math.floor(t*3)/3;}))return false;
     }else{
       this.phase('tilt','Бутылка наклоняется к губам.');if(!await this.tween(450,t=>{this.carry.angle=-65*ease(t);}))return false;
-      this.phase('drink','물을 마셔요 — несколько глотков воды.');if(!await this.tween(1500,t=>{this.pose=clonePose(use);this.pose.angle=Math.sin(t*Math.PI*6)*.8;this.carry.angle=-65-Math.sin(t*Math.PI*6)*1.5;}))return false;
+      this.phase('drink',id==='milk'?'우유를 마셔요 — герой пьёт молоко.':'물을 마셔요 — несколько глотков воды.');if(!await this.tween(1500,t=>{this.pose=clonePose(use);this.pose.angle=Math.sin(t*Math.PI*6)*.8;this.carry.angle=-65-Math.sin(t*Math.PI*6)*1.5;}))return false;
       this.phase('lower','Герой опускает бутылку.');const angle=this.carry.angle;if(!await this.tween(450,t=>{this.carry.angle=angle*(1-ease(t));}))return false;
     }
-    if(!await this.poseTo(carryPose(),650))return false;object.state={open:0,using:false};this.carry={angle:0,open:0};this.phase('idle','Предмет остаётся в руке.');this.draw();return true;
+    if(!await this.poseTo(carryPose(),650))return false;object.state={open:0,using:false};this.carry={angle:0,open:0,...(kind==='eat'?{remaining:0}:{})};this.phase('idle','Предмет остаётся в руке.');this.draw();return true;
   }
   heroFrame(facing,opacity=1,part='all'){
     const p=project(this.position),scale=heroScale(this.position),sign=facingSign(facing),held=this.state.held;
@@ -127,24 +150,26 @@ export class RoomRenderer{
     const id=this.state.held;if(!id)return '';const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);let sign=facingSign(this.facing);
     if(this.turn)sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);
     const grip=this.state.objects[id].grip;
-    return `<g data-held="${id}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true})}</g>`;
+    return `<g data-held="${id}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true,lit:this.carry.lit,remaining:this.carry.remaining??1})}</g>`;
   }
   draw(){
     if(!this.layer||!this.visible||!this.state)return;const entries=[],items=this.previewItems||this.state.items;this.frameLayers=new Map();
     const tableDepth=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2])[1];
     if(items.desk){const e=this.effects.desk||{},c=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]);entries.push({id:'desk',depth:tableDepth,html:`<g opacity="${e.opacity??1}" transform="translate(${c.join(' ')}) scale(${e.scale??1}) translate(${-c[0]} ${-c[1]})">${deskArt()}</g>`});}
-    for(const id of ['book','water'])if(items[id]&&items[id]!=='hand'){
-      const placement=items[id],e=this.effects[id]||{},same=placement===this.state.items[id],location=this.state.objects[id].location,point=e.point||(same?this.state.point(id):itemLocation(id,placement).point);
-      entries.push({id,depth:e.depth??(placement==='table'?tableDepth+1:project(same?location.uv:FLOOR_SLOTS[id])[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
+    for(const id of Object.keys(ROOM_ITEMS).filter(id=>id!=='desk'))if(items[id]&&items[id]!=='hand'){
+      const object=this.state.objects[id],e=this.effects[id]||{},placement=items[id],location=this.previewLocations?.[id]||object.location;
+      if(isFurniture(id)){const depth=project(furnitureCenter(id))[1];entries.push({id,depth,html:`<g opacity="${e.opacity??1}">${furnitureArt(id,object.state)}</g>`});continue;}
+      const point=e.point||project(location.uv,location.height);
+      entries.push({id,depth:e.depth??(placement==='table'?tableDepth+1:project(location.uv)[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
     }
-    const heroDepth=project(this.position)[1],overTable=this.interactionSurface==='desk'&&items.desk&&heroDepth<tableDepth+1;
+    const support=this.restingSupport||this.state.hero.support,heroDepth=support?project(furnitureCenter(support))[1]+1:project(this.position)[1],overTable=this.interactionSurface==='desk'&&items.desk&&heroDepth<tableDepth+1;
     const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
     entries.push({id:'hero',depth:heroDepth,html:frames(overTable?'body':'all')+this.flagMarkup()+(overTable?'':this.heldMarkup())});
     if(overTable)entries.push({id:'hero-arm',depth:tableDepth+2,html:frames('arm')+this.heldMarkup()});
     entries.sort((a,b)=>a.depth-b.depth);this.layer.innerHTML=entries.map(({id,depth,html})=>`<g data-room-object="${id}" data-depth="${depth.toFixed(1)}">${html}</g>`).join('');
-    this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.view=this.turn?.to||this.facing;this.scene.dataset.held=this.state.held||'';this.scene.dataset.heading=(this.heading||[0,0]).map(v=>v.toFixed(2)).join(',');
+    this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.view=this.turn?.to||this.facing;this.scene.dataset.held=this.state.held||'';this.scene.dataset.posture=this.state.hero.posture;this.scene.dataset.heading=(this.heading||[0,0]).map(v=>v.toFixed(2)).join(',');
     if(this.navigation){this.scene.dataset.routeLength=routeLength(this.navigation.points).toFixed(1);this.scene.dataset.rawWaypoints=String(this.navigation.raw.length);}
-    this.scene.setAttribute('aria-label',`Комната. ${['desk','book','water'].filter(id=>items[id]).map(id=>({desk:'Стол',book:'Книга',water:'Вода'})[id]).join(', ')||'Пока пусто'}. ${this.state.held?'Предмет в руке. ':''}Герой из первого уровня.`);
+    this.scene.setAttribute('aria-label',`Комната. ${Object.keys(ROOM_ITEMS).filter(id=>items[id]).map(id=>ROOM_ITEMS[id]).join(', ')||'Пока пусто'}. ${this.state.held?'Предмет в руке. ':''}Герой из первого уровня.`);
     this.overlay.innerHTML=this.debug?this.debugArt(entries):'';
   }
   debugArt(entries){

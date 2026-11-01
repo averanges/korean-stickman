@@ -22,13 +22,16 @@ export function deskArt(){
     <polygon points="${pts(top)}" fill="#efc489"/><path d="M${top[3].join(' ')}L${top[2].join(' ')}L${top[1].join(' ')}v12L${top[2][0]} ${top[2][1]+12}L${top[3][0]} ${top[3][1]+12}Z" fill="#c68d4e"/>
     <path d="M${project([u+.06,v+.17],height+1).join(' ')}L${project([u+w-.04,v+.17],height+1).join(' ')}" stroke="#daa766" stroke-width="1.5"/></g>`;
 }
-export function itemArt(id,{open=0,held=false}={}){
+export function itemArt(id,{open=0,held=false,lit=false,remaining=1}={}){
   const amount=Math.max(0,Math.min(1,Number(open)||0));
   const shadowless=markup=>held?markup.replace(/<ellipse cy="2"[^>]*\/>/gu,''):markup;
   if(id==='book'&&amount>0)return `<g data-open="${amount.toFixed(3)}"><g opacity="${1-amount}">${shadowless(itemShape(id))}</g><g opacity="${amount}" transform="translate(0 -5) scale(1 ${.65+.35*amount}) translate(0 5)">${itemShape(id,{open:true})}</g></g>`;
-  return shadowless(itemShape(id));
+  const shape=shadowless(itemShape(id));return `<g data-consumed="${1-remaining}" transform="scale(${remaining})">${shape}${id==='phone'&&lit?'<rect x="-10" y="-39" width="20" height="28" rx="2" fill="#9ce7f4"/>':''}</g>`;
 }
 function itemShape(id,{open=false}={}){
+  if(id==='apple')return `<g stroke="#794f3c" stroke-width="2.3"><ellipse cy="2" rx="19" ry="7" fill="#443b3218" stroke="none"/><path d="M0-28C-22-43-29-5-9 1Q0 5 7 1C28-7 24-41 0-28Z" fill="#e86b56"/><path d="M0-28L3-38"/><path d="M3-32Q7-44 18-38Q14-28 3-32Z" fill="#8eaf6e"/><path d="M-11-25Q-17-19-13-10" fill="none" stroke="#ffc5a3" stroke-width="3"/></g>`;
+  if(id==='phone')return `<g stroke="#514a46" stroke-width="2.5"><ellipse cy="2" rx="18" ry="6" fill="#443b3218" stroke="none"/><rect x="-15" y="-47" width="30" height="47" rx="5" fill="#747e8a"/><rect x="-10" y="-39" width="20" height="28" rx="2" fill="#b9d5dd" stroke="none"/><path d="M-3-43H3"/><circle cy="-5" r="2" fill="#e6e2d7" stroke="none"/></g>`;
+  if(id==='milk')return `<g stroke="#5c7689" stroke-width="2.3" stroke-linejoin="round"><ellipse cy="2" rx="20" ry="7" fill="#443b3218" stroke="none"/><path d="M-17-48L-9-63H10L18-48V1H-17Z" fill="#fff8e9"/><path d="M-17-48H18V-20H-17Z" fill="#9ec7df"/><path d="M-9-63L-5-50H18M-5-50V1" fill="none"/><path d="M-11-34H12" stroke="#fff" stroke-width="4"/><circle cx="9" cy="-55" r="4" fill="#e8f5fc"/></g>`;
   if(id==='book')return open?`<g stroke="#4b4741" stroke-width="2.3" stroke-linejoin="round"><path d="M0-5L-41-17L-35-47Q-17-50 0-37Q17-50 35-47L41-17Z" fill="#fff9e6"/><path d="M0-37V-5M-29-36L-9-29M-29-29L-9-22M9-29L29-36M9-22L29-29" fill="none" stroke="#b4b09f" stroke-width="1.4"/></g>`:
     `<g stroke="#484039" stroke-width="2.4" stroke-linejoin="round"><ellipse cy="2" rx="43" ry="10" fill="#443b32" opacity=".12" stroke="none"/><path d="M-43-12L16-34L42-19L-16 5Z" fill="#ef7761"/><path d="M-40-10L-16 1L39-19V-10L-16 12L-40 0Z" fill="#fff4d7"/><path d="M-43-12L-43 1L-16 15L43-8V-18M-16 5V15" fill="none" stroke="#aa4b42"/><path d="M-21-15L10-26M-25-10L3-20" stroke="#ffd2a8" stroke-width="2"/><path d="M3-21L18-26L26-22L10-17Z" fill="#fff5da" stroke="none"/></g>`;
   return `<g stroke="#3e5863" stroke-width="2.3" stroke-linejoin="round"><ellipse cy="2" rx="20" ry="7" fill="#443b32" opacity=".10" stroke="none"/><path d="M-10-55Q-16-48-16-41V-5Q-16 3 0 3Q16 3 16-5V-41Q16-48 10-55Z" fill="#e5f7fc"/><path d="M-11-35Q0-30 11-35V-7Q0-1-11-7Z" fill="#81c9e8" stroke="none"/><path d="M-8-42V-13" stroke="#fff" stroke-width="3" stroke-linecap="round"/><rect x="-11" y="-65" width="22" height="12" rx="4" fill="#639ecc"/><path d="M-7-61H7" stroke="#9dcbe8" stroke-width="1.5"/></g>`;

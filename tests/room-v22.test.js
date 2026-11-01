@@ -45,7 +45,7 @@ test('automatic book and water use compose the same operations, retaining actual
   const state=new RoomState(memory()),events=[];create(state,'desk','book','water');const queue=new RoomController(state,fakeRenderer(state,events));
   const reading=queue.run(parseRoom('책을 읽어요')),drinking=queue.run(parseRoom('물을 마셔요'));await Promise.all([reading,drinking]);
   assert.deepEqual(events,['move_to:book','take:book','use:book','move_to:book','put:book','move_to:water','take:water','use:water','move_to:water','put:water']);
-  assert.deepEqual(state.items,{desk:'floor',book:'table',water:'table'});assert.ok(state.canInteract('water',state.contextAt('water',state.hero.position)));assert.notDeepEqual(state.hero.position,START);assert.equal(queue.busy,false);
+  assert.deepEqual(state.items,{desk:'floor',book:'table',water:'table',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});assert.ok(state.canInteract('water',state.contextAt('water',state.hero.position)));assert.notDeepEqual(state.hero.position,START);assert.equal(queue.busy,false);
 });
 test('contact transfers ownership only after the wrist reaches floor or tabletop grip, then restores exact anchor',async()=>{
   for(const surface of ['floor','table'])for(const id of ['book','water']){
@@ -69,7 +69,7 @@ test('held state and position survive reload; removing support preserves ownersh
   const final=new RoomState(storage);assert.deepEqual(final.items,restored.items);assert.deepEqual(final.hero,restored.hero);
 });
 test('old saves migrate; malformed ownership cannot restore two held props or ghost tabletop items',()=>{
-  const storage=memory();storage.setItem(ROOM_STORAGE_KEY,JSON.stringify({version:1,items:{desk:'floor',book:'table',water:'floor'}}));const state=new RoomState(storage);assert.deepEqual(state.items,{desk:'floor',book:'table',water:'floor'});
+  const storage=memory();storage.setItem(ROOM_STORAGE_KEY,JSON.stringify({version:1,items:{desk:'floor',book:'table',water:'floor',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null}}));const state=new RoomState(storage);assert.deepEqual(state.items,{desk:'floor',book:'table',water:'floor',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
   const duplicate={version:2,hero:{position:[.7,.4]},objects:{desk:{location:{kind:'floor'}},book:{location:{kind:'hand'},returnTo:{kind:'table'}},water:{location:{kind:'hand'}}}};
   storage.setItem(ROOM_STORAGE_KEY,JSON.stringify(duplicate));const repaired=new RoomState(storage);assert.equal(Object.values(repaired.items).filter(kind=>kind==='hand').length,1);assert.ok(walkable(repaired.hero.position,repaired.obstacles));
 });

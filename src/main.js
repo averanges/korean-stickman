@@ -4,7 +4,7 @@ import { WorldState } from './world.js';
 import { Renderer } from './renderer.js';
 import { ActionController } from './controller.js';
 import { BrowserSpeech } from './speech.js';
-import { RoomState, RoomController, parseRoom } from './room-state.js';
+import { RoomState, RoomController, parseRoom,ROOM_ITEMS } from './room-state.js';
 import { RoomRenderer } from './room-renderer.js';
 const $=selector=>document.querySelector(selector);
 const world=new WorldState();
@@ -45,7 +45,7 @@ function refresh(){
   $('#context-hint').textContent=profile.awake?'Например: 저는 학생이에요 — «Я ученик»':'Скажи «안녕하세요» — «Здравствуйте»';
   $('#scene').setAttribute('aria-label',`${profile.awake?'Стоящий':'Спящий'} стикмен. ${Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean).join(', ')}`);
   if(mode==='home'){
-    for(const id of ['desk','book','water']){const placement=room.items[id];$(`#room-${id}`).textContent=placement==='hand'?'В руке':placement==='table'?'На столе':placement==='floor'?'На полу':'Пока нет';$(`#room-${id}`).classList.toggle('present',Boolean(placement));}
+    for(const id of Object.keys(ROOM_ITEMS)){const placement=room.items[id];$(`#room-${id}`).textContent=placement==='hand'?'В руке':placement==='table'?'На столе':placement==='floor'?(id==='lamp'?(room.objects.lamp.state.on?'Включена':'Выключена'):(room.objects[id].type==='portable'?'На полу':'В комнате')):'Пока нет';$(`#room-${id}`).classList.toggle('present',Boolean(placement));}
     $('#room-hero-summary').textContent=[profile.name||'Твой герой',...Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean)].join(' · ');
     const op=roomController.operation;$('#room-operation').textContent=op?`${op.action} ${op.item} · ${op.status}${op.message?' · '+op.message:''}`:'Операций пока нет';
   }
@@ -133,7 +133,7 @@ $('#reset').onclick=()=>{
 function changeLevel(home){
   revision++;speech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V2.3':'Korean Stickman — Создай своего героя';
+  document.title=home?'Korean Stickman — Мой дом · V2.4':'Korean Stickman — Создай своего героя';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
