@@ -6,14 +6,16 @@ const MAX_BYTES=20*1024*1024;
 export class BrowserSpeech {
   constructor(callbacks,{navigator=globalThis.navigator,Recorder=globalThis.MediaRecorder,AudioContext=globalThis.AudioContext||globalThis.webkitAudioContext,provider=new HttpSttProvider(),now=()=>performance.now(),schedule=(fn,ms)=>globalThis.setInterval(fn,ms),unschedule=id=>globalThis.clearInterval(id)}={}){
     this.callbacks=callbacks;this.navigator=navigator;this.Recorder=Recorder;this.AudioContext=AudioContext;this.provider=provider;
-    this.now=now;this.schedule=schedule;this.unschedule=unschedule;this.state='idle';this.session=null;
+    this.now=now;this.schedule=schedule;this.unschedule=unschedule;this.state='idle';this.session=null;this.pending=null;this.language='ko';this.stageName='idle';
     this.mime=Recorder?.isTypeSupported?selectAudioType(Recorder):null;
     this.supported=Boolean(navigator?.mediaDevices?.getUserMedia&&Recorder&&AudioContext&&this.mime);
   }
-  get active(){return ['requesting','recording','stopping','processing'].includes(this.state);}
+  get active(){return ['requesting','recording','stopping','processing','executing'].includes(this.state);}
   get recording(){return this.state==='recording';}
   get cancellable(){return this.active;}
-  status(state,details={}){this.state=state;this.callbacks.onStatus?.(state,details);}
+  stage(name,details={}){if(name!=='timing')this.stageName=name;this.callbacks.onStage?.(name,details);}
+  status(state,details={}){this.state=state;if(state==='requesting')this.stage('requesting_microphone',{permission:'запрошен',language:this.language});if(state==='recording')this.stage('recording',{permission:'разрешён',...details});this.callbacks.onStatus?.(state,details);}
+  setLanguage(language){if(this.active||this.pending||!['ko','ru'].includes(language))return false;this.language=language;return true;}
   current(session){return this.session===session;}
   release(session){
     if(session.timer!==undefined)this.unschedule(session.timer);
@@ -22,21 +24,23 @@ export class BrowserSpeech {
     session.source?.disconnect?.();try{Promise.resolve(session.context?.close()).catch(()=>{});}catch{}
     session.chunks=[];
   }
-  fail(session,code){
+  fail(session,code,details={}){
     if(!this.current(session))return;
-    this.session=null;this.release(session);this.state='error';this.callbacks.onError?.(code);this.callbacks.onEnd?.();
+    this.session=null;this.release(session);this.state='error';this.stage('error',{...details,error:code,failureStage:details.stage||this.stageName,...(code==='not-allowed'?{permission:'запрещён'}:{})});this.callbacks.onError?.(code,details);this.callbacks.onEnd?.();
   }
   async start(){
     if(!this.supported||this.active)return;
-    const session={chunks:[],bytes:0,voicedMs:0,manual:false,abort:new AbortController()};
+    this.pending=null;
+    const session={language:this.language,chunks:[],bytes:0,voicedMs:0,manual:false,abort:new AbortController()};
     this.session=session;this.status('requesting');
     try{
       // Create/resume on the initiating user gesture. Analysis never connects to speakers.
-      session.context=new this.AudioContext();const resumed=session.context.resume?.();
+      session.context=new this.AudioContext();const resumed=Promise.resolve(session.context.resume?.()).then(()=>null,error=>error);
       session.stream=await this.navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:false,autoGainControl:true},video:false});
       if(!this.current(session)){this.release(session);return;}
-      await resumed;if(!this.current(session)){this.release(session);return;}
-      const recorder=session.recorder=new this.Recorder(session.stream,{mimeType:this.mime,audioBitsPerSecond:64000});
+      const resumeError=await resumed;if(!this.current(session)){this.release(session);return;}if(resumeError)throw resumeError;
+      let recorder;for(const mimeType of RECORDING_TYPES.filter(type=>this.Recorder.isTypeSupported(type))){try{recorder=new this.Recorder(session.stream,{mimeType,audioBitsPerSecond:64000});break;}catch(error){if(error.name!=='NotSupportedError')throw error;}}
+      if(!recorder)throw new SpeechError('unsupported-format');session.recorder=recorder;
       const actual=recorder.mimeType||this.mime;
       if(!/^(audio\/webm|audio\/ogg|audio\/mp4)(;|$)/u.test(actual))throw new SpeechError('unsupported-format');
       session.mime=actual;session.source=session.context.createMediaStreamSource(session.stream);session.analyser=session.context.createAnalyser();
@@ -77,19 +81,35 @@ export class BrowserSpeech {
   async finish(session){
     if(!this.current(session))return;
     const audio=new Blob(session.chunks,{type:session.mime});
+    this.stage('audio_ready',{durationMs:session.durationMs,bytes:audio.size,mime:audio.type});
     // Reject silence only after the user's explicit stop; never cut internal pauses.
     if(session.durationMs<500){this.fail(session,'too-short');return;}
     if(audio.size<128||session.voicedMs<80){this.fail(session,'empty-audio');return;}
-    this.release(session);this.status('processing');
+    this.pending={audio,durationMs:session.durationMs,language:session.language};
+    this.release(session);
+    await this.submit(session,this.pending);
+  }
+  async submit(session,pending){
+    this.status('processing');
     try{
-      const result=await this.provider.transcribe(audio,{durationMs:session.durationMs,signal:session.abort.signal});
+      await this.callbacks.beforeUpload?.();if(!this.current(session))return;
+      const result=await this.provider.transcribe(pending.audio,{durationMs:pending.durationMs,language:pending.language,signal:session.abort.signal,onStage:(name,details)=>{if(this.current(session))this.stage(name,details);}});
       if(!this.current(session))return;
-      this.session=null;this.state='idle';this.callbacks.onFinal?.(result.text);this.callbacks.onEnd?.();
-    }catch(error){if(this.current(session))this.fail(session,error.code||'network');}
+      this.pending=null;this.stage('transcribed',{transcript:result.text});this.state='executing';
+      const executed=await this.callbacks.onFinal?.(result.text);
+      if(!this.current(session))return;
+      if(executed?.error)throw new SpeechError(executed.error,{stage:executed.error==='unknown-command'?'transcribed':'executing'});
+      this.session=null;this.state='idle';this.stage('completed',{result:executed?.message||'Выполнено'});this.callbacks.onEnd?.();
+    }catch(error){if(this.current(session))this.fail(session,error.name==='AbortError'?'interrupted':error.code||(this.state==='executing'?'game-error':'network'),error);}
+  }
+  async retry(){
+    if(this.active||!this.pending)return;const pending=this.pending;
+    const session={chunks:[],abort:new AbortController(),language:pending.language};this.session=session;
+    await this.submit(session,pending);
   }
   cancel(){
-    const session=this.session;this.session=null;
+    const session=this.session,hadAudio=Boolean(session||this.pending);this.session=null;this.pending=null;
     if(session){session.abort.abort();this.release(session);}
-    this.status('idle');this.callbacks.onEnd?.();
+    if(hadAudio)this.stage('cancelled',{result:'Отменено пользователем',error:'cancelled',failureStage:null});this.status('idle');this.callbacks.onEnd?.();
   }
 }

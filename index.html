@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#fffefa"><title>Korean Stickman — V2.5</title>
+  <meta name="theme-color" content="#fffefa"><title>Korean Stickman — V2.6</title>
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
@@ -44,14 +44,16 @@
           <div class="room-examples"><p>Добавь предмет <span lang="ko">책상이 있어요.</span></p><p>Книгу и воду <span lang="ko">책하고 물이 있어요.</span></p><p>Читай <span lang="ko">책을 읽어요.</span></p><p>Пей воду <span lang="ko">물을 마셔요.</span></p><p>Убери предмет <span lang="ko">책상이 없어요.</span></p></div>
           <details class="room-actions"><summary>Новые действия</summary><p lang="ko">의자에 앉아요 · 일어나요<br>침대에 누워요 · 침대에서 자요<br>사과를 먹어요 · 사과를 집어요 · 사과를 놓아요<br>휴대폰을 봐요 · 휴대폰을 사용해요<br>우유를 마셔요<br>전등을 켜요 · 전등을 꺼요</p></details>
         </section>
-        <div class="voice-area"><button id="mic" class="mic" aria-label="Начать распознавание корейской речи"><svg viewBox="0 0 48 60" aria-hidden="true"><rect x="15" y="3" width="18" height="34" rx="9" fill="currentColor" stroke="none"/><path d="M7 27v3a17 17 0 0 0 34 0v-3M24 47v9M16 56h16" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg><span class="mic-spinner" aria-hidden="true"></span></button><strong id="status" role="status">Готов</strong><span id="speech-help">Нажми, чтобы начать запись</span><button id="cancel-recording" type="button" class="cancel-recording" hidden>Отменить запись</button></div>
+        <div id="voice-connection" class="voice-connection" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="connection-label">Подключаем голосовое управление…</span><button id="connection-retry" type="button" hidden>Повторить</button></div>
+        <div class="voice-area"><button id="mic" class="mic" aria-label="Начать распознавание корейской речи"><svg viewBox="0 0 48 60" aria-hidden="true"><rect x="15" y="3" width="18" height="34" rx="9" fill="currentColor" stroke="none"/><path d="M7 27v3a17 17 0 0 0 34 0v-3M24 47v9M16 56h16" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg><span class="mic-spinner" aria-hidden="true"></span></button><strong id="status" role="status">Готов</strong><span id="speech-help">Нажми, чтобы начать запись</span><button id="retry-audio" type="button" class="cancel-recording" hidden>Повторить отправку записи</button><button id="cancel-recording" type="button" class="cancel-recording" hidden>Отменить запись</button></div>
+        <details id="voice-settings" class="voice-settings"><summary>Настройки голоса / тестирование</summary><label for="stt-language">Язык распознавания</label><select id="stt-language"><option value="ko">한국어</option><option value="ru">Русский (тест)</option></select><p>Проверка сервера не проверяет Groq. Отчёт содержит только последний запрос на этом устройстве.</p><textarea id="voice-report" aria-label="Диагностический отчёт голосового запроса" readonly rows="12"></textarea><button id="copy-voice-report" type="button">Скопировать отчёт</button><span id="copy-report-status" role="status"></span></details>
         <div class="heard-line"><span>Я СЛЫШУ</span><p id="transcript" lang="ko">…</p><button id="repeat" aria-label="Повторить последнюю команду" title="Повторить последнюю команду" disabled>↻</button></div>
         <p id="feedback" role="status">Начни с приветствия. Или сразу расскажи о герое!</p>
         <form id="command-form"><label class="sr-only" for="command">Фраза на корейском</label><input id="command" placeholder="Или напиши: 학생이에요" autocomplete="off" maxlength="150"><button id="submit" type="submit" aria-label="Выполнить фразу" title="Выполнить фразу">↗</button></form>
         <button id="enter-world" class="world-button">В мир <span>→</span></button><p class="optional-note">Можно отправиться даже с пустой анкетой</p>
       </aside>
     </div>
-    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V2.5 · Умное размещение</span></footer>
+    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V2.6 · Голос и диагностика</span></footer>
   </main>
   <script type="module" src="src/main.js"></script>
 </body>

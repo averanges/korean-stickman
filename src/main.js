@@ -1,3 +1,7 @@
+import {VoiceHealth} from './voice-health.js';
+import {VoiceDiagnostics,STAGE_LABELS,ERROR_MESSAGES} from './voice-diagnostics.js';
+import {interpretRussian} from './russian-test.js';
+import {SpeechError} from './stt-client.js';
 import { parseKorean, interpretSpeech } from './parser.js';
 import { catalogs } from './catalog.js';
 import { WorldState } from './world.js';
@@ -15,7 +19,11 @@ const roomController=new RoomController(room,roomRenderer,{onChange:()=>refresh(
   $('#transcript').textContent=command.heard||'…';feedback(command.ok?'Герой тебя услышал. Смотри, что будет…':command.message);
 }});
 let controller, speech, last=null, revision=0, voiceError=false, speechPhase='idle', mode='creator';
-let recordedMs=0;
+let recordedMs=0,voiceStage='idle';
+const diagnostics=new VoiceDiagnostics();
+diagnostics.onChange=()=>{$('#voice-report').value=diagnostics.report();};
+$('#voice-report').value=diagnostics.report();
+const health=new VoiceHealth({onChange:connection=>{diagnostics.update({serverState:connection.state==='ready'?(connection.configured?'Сервер готов (проверка доступности)':'Сервер готов, STT не настроен'):connection.state,serverHttp:connection.httpStatus,serverAttempts:connection.attempt,serverError:connection.error});refresh();}});
 const feedback=(message,type='')=>{$('#feedback').textContent=message;$('#feedback').dataset.type=type;};
 function refresh(){
   const profile=world.profile;
@@ -26,21 +34,29 @@ function refresh(){
   }
   const activeController=mode==='home'?roomController:controller;
   const listening=speech?.recording||false,voiceBusy=speech?.active||false,busy=mode==='home'?roomController.busy:world.busy;
-  const processing=['stopping','processing'].includes(speechPhase);
-  $('#mic').disabled=!speech?.supported||processing||speechPhase==='requesting';
+  const processing=['stopping','processing','executing'].includes(speechPhase);
+  $('#mic').disabled=!speech?.supported||Boolean(speech?.active&&!listening)||(!listening&&(!health.ready||Boolean(speech?.pending)));
   $('#mic').classList.toggle('listening',listening);$('#mic').classList.toggle('processing',processing||busy&&!listening);$('#mic').classList.toggle('error',voiceError);
-  $('#mic').setAttribute('aria-label',listening?'Завершить запись и распознать':'Начать запись корейской речи');
+  $('#mic').setAttribute('aria-label',listening?'Завершить запись и распознать':speech?.language==='ru'?'Начать запись речи на русском':'Начать запись корейской речи');
   $('#mic').setAttribute('aria-pressed',String(listening));
-  $('#cancel-recording').hidden=!voiceBusy;$('#cancel-recording').textContent=processing?'Отменить отправку':'Отменить запись';
+  $('#cancel-recording').hidden=!voiceBusy&&!speech?.pending;$('#cancel-recording').textContent=!voiceBusy&&speech?.pending?'Удалить запись':processing?'Отменить отправку':'Отменить запись';
+  $('#retry-audio').hidden=!speech?.pending||voiceBusy;$('#retry-audio').disabled=!health.ready;$('#stt-language').disabled=voiceBusy||Boolean(speech?.pending);
+  $('#voice-connection').dataset.state=health.state;$('#connection-label').textContent=health.state==='connecting'?'Подключаем голосовое управление…':health.state==='ready'?(health.configured?'Сервер готов':'Сервер готов · распознавание не настроено'):health.state==='error'?(ERROR_MESSAGES[health.error]||ERROR_MESSAGES['server-unavailable']):'Подключаем голосовое управление…';
+  $('#connection-retry').hidden=health.state!=='error'&&!(health.state==='ready'&&!health.configured);
+  $('#transcript').lang=$('#stt-language').value;
+  $('#command').placeholder=$('#stt-language').value==='ru'?(mode==='home'?'Или напиши: Создай книгу':'Или напиши: Привет'):(mode==='home'?'Или напиши: 책이 있어요':'Или напиши: 학생이에요');
   $('#submit').disabled=voiceBusy;$('#repeat').disabled=!last||voiceBusy;
   if(listening)$('#status').textContent='Слушаю';
   else if(speechPhase==='requesting')$('#status').textContent='Разрешите микрофон';
   else if(processing)$('#status').textContent='Обрабатываю';
   else if(busy)$('#status').textContent=activeController?.pending?`Обрабатываю · в очереди ${activeController.pending}`:'Обрабатываю';
-  else $('#status').textContent=voiceError?'Повторить':'Готов';
+  else $('#status').textContent=voiceError?'Повторить':STAGE_LABELS[voiceStage]||'Готов';
+  if(!voiceBusy&&!busy&&!speech?.pending&&!health.ready)$('#status').textContent=health.state==='connecting'?'Подключаем…':health.state==='ready'?'Голос не настроен':'Голос недоступен';
+  if(!listening&&speech?.active&&STAGE_LABELS[voiceStage])$('#status').textContent=STAGE_LABELS[voiceStage];
+  if(!voiceBusy&&speech?.pending)$('#speech-help').textContent='Запись сохранена. Повторите отправку или удалите её для новой записи.';
   if(listening){const seconds=Math.floor(recordedMs/1000);$('#speech-help').textContent=`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} · Нажми ещё раз, когда закончишь`;}
   else if(processing)$('#speech-help').textContent='Распознаём полную запись';
-  else if(speech?.supported)$('#speech-help').textContent='Первое нажатие — запись, второе — отправка';
+  else if(speech?.supported&&!speech.pending)$('#speech-help').textContent='Первое нажатие — запись, второе — отправка';
   $('#scene-caption').textContent=profile.awake?'Теперь это твой герой.':'Разбуди его одним словом.';
   $('#context-hint').textContent=profile.awake?'Например: 저는 학생이에요 — «Я ученик»':'Скажи «안녕하세요» — «Здравствуйте»';
   $('#scene').setAttribute('aria-label',`${profile.awake?'Стоящий':'Спящий'} стикмен. ${Object.entries(catalogs).map(([field,catalog])=>catalog[profile[field]]?.label).filter(Boolean).join(', ')}`);
@@ -63,7 +79,7 @@ async function execute(command){
     if(roomController.busy)feedback('Фраза в очереди. Герой сначала закончит движение.');
     const result=await roomController.run(command);
     if(!result.cancelled&&revision===current&&mode==='home'&&(!roomController.busy||result.type==='queue'))feedback(result.message,result.type);
-    refresh();return;
+    refresh();return result;
   }
   if(command.commands){const revisionBefore=revision;const results=await Promise.all(command.commands.map(item=>execute({...item,heard:command.heard})));if(revision===revisionBefore){last=command;refresh();}return results;}
   voiceError=false;
@@ -74,45 +90,34 @@ async function execute(command){
   if(result.cancelled||current!==revision||mode!=='creator')return;
   // Do not overwrite the next command's live feedback when its predecessor resolves.
   if(!world.busy||result.type==='queue')feedback(result.message,result.type);
-  refresh();
+  refresh();return result;
 }
 speech=new BrowserSpeech({
   onStatus:(phase,details)=>{
     speechPhase=phase;recordedMs=details?.elapsedMs||0;voiceError=false;
     if(phase==='requesting'){$('#transcript').textContent='…';feedback('Говори спокойно: паузы можно делать любой длины. Закончив, нажми микрофон ещё раз.');}
-    if(phase==='processing')feedback('Распознаём полную запись. Характеристики героя пока не меняются.');
+    if(phase==='processing')feedback('Запись готова. Подготавливаем отправку.');
     refresh();
   },
-  onFinal:text=>{
-    const command=mode==='home'?parseRoom(text):interpretSpeech([{text}],world.profile);
-    diagnose(text,command,'Groq');
-    $('#command').value=text;
-    execute(command);
+  beforeUpload:()=>{if(!health.ready)throw new SpeechError(health.state==='ready'?'not-configured':'server-unavailable',{stage:'audio_ready',source:'Render'});},
+  onStage:(stage,details)=>{
+    if(stage==='timing'){diagnostics.update(details);return;}
+    voiceStage=stage;if(['uploading','processing'].includes(stage))feedback(STAGE_LABELS[stage]);diagnostics.stage(stage,{...details,...(details.elapsedMs!==undefined?{durationMs:details.elapsedMs}:{})});refresh();
+  },
+  onFinal:async text=>{
+    const voiceSession=speech.session;
+    const command=selectedCommand(text,true);diagnose(text,command,'Groq');$('#command').value=text;
+    diagnostics.update({transcript:text,action:command.ok?describeAction(command):'не определено'});
+    if(!command.ok){await execute(command);if(speech.session!==voiceSession)return;diagnostics.update({result:'Команда не определена'});return {error:'unknown-command'};}
+    speech.stage('executing');const result=await execute(command),results=Array.isArray(result)?result:[result],failure=results.find(r=>r?.cancelled||r?.type==='error'||r?.type==='queue');
+    if(speech.session!==voiceSession)return;
+    diagnostics.update({result:failure?.message||(failure?.cancelled?'Действие отменено':results.map(r=>r?.message).filter(Boolean).join(' · ')||'Выполнено')});
+    return failure?{error:'game-error'}:{ok:true,message:diagnostics.data.result};
   },
   onError:code=>{
     voiceError=true;
-    const messages={
-      'not-allowed':'Доступ к микрофону закрыт. Разреши его в браузере или напиши фразу ниже.',
-      'service-not-allowed':'Браузер запретил распознавание. Можно написать фразу вручную.',
-      'audio-capture':'Микрофон не найден. Подключи его или используй поле ниже.',
-      'no-speech':'Не удалось услышать речь. Нажми на микрофон и попробуй ещё раз.',
-      network:'Распознавание недоступно. Проверь интернет или напиши фразу.',
-      'service-unavailable':'Голосовой сервис временно недоступен или просыпается. Попробуй позже; ручной ввод работает, герой сохранён.',
-      'api-unconfigured':'Адрес голосового сервиса не настроен. Ручной ввод работает, герой сохранён.',
-      'language-not-supported':'Распознавание ko-KR недоступно в этом браузере. Используй ручной ввод.',
-      'not-configured':'Добавь GROQ_API_KEY в локальный .env сервера. Ключ не нужно вводить на странице.',
-      'empty-audio':'В записи не удалось обнаружить звук речи. Нажми микрофон и попробуй ещё раз.',
-      'too-short':'Запись слишком короткая. Говори спокойно, затем нажми микрофон ещё раз.',
-      'unclear':'Не удалось уверенно разобрать запись. Попробуй ещё раз — герой остаётся прежним.',
-      'interrupted':'Браузер прервал запись. Она не отправлена. Нажми микрофон и попробуй ещё раз.',
-      'unsupported-format':'Браузер не поддерживает подходящий формат записи. Используй другой браузер или ручной ввод.',
-      'recording-error':'Не удалось записать звук. Проверь микрофон и попробуй ещё раз.',
-      'provider-auth':'Сервер не смог подключиться к Groq. Проверь ключ в локальном .env.',
-      'rate-limit':'Сервис распознавания просит немного подождать. Затем попробуй ещё раз.',
-      'timeout':'Голосовой сервис не ответил вовремя. Он может просыпаться. Попробуй ещё раз или используй ручной ввод.',
-      'too-large':'Запись слишком большая. Она не отправлена. Запиши более короткую попытку.',
-    };
-    feedback(messages[code]||'Не удалось распознать речь. Попробуй ещё раз или напиши фразу.','error');refresh();
+    const message=code==='unknown-command'?`Я услышал «${String(diagnostics.data.transcript||'').slice(0,200)}», но не понял команду.`:ERROR_MESSAGES[code]||'Не удалось распознать речь. Попробуйте ещё раз.';
+    feedback(message+(speech.pending?' Запись сохранена до повторной отправки или удаления.':''),'error');refresh();
   },
   onEnd:()=>{speechPhase='idle';refresh();},
 });
@@ -121,8 +126,16 @@ $('#hero-name').addEventListener('input',event=>{world.setName(event.target.valu
 function diagnose(raw,command,source){
   if(new URLSearchParams(location.search).get('debug')==='1')console.info('[Korean Stickman interpretation]',{source,raw,accepted:command.ok,intents:command.intents||[],reason:command.reason||command.type||'unknown'});
 }
-$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=mode==='home'?parseRoom(raw,{debug:roomRenderer.debug}):parseKorean(raw,world.profile);diagnose(raw,command,'manual');execute(command);}};
-$('#mic').onclick=()=>{voiceError=false;if(speech.recording)speech.stop();else if(!speech.active)speech.start();refresh();};
+function selectedCommand(text,voice=false){return $('#stt-language').value==='ru'?interpretRussian(text,{home:mode==='home',profile:world.profile,voice}):mode==='home'?parseRoom(text,{debug:!voice&&roomRenderer.debug}):voice?interpretSpeech([{text}],world.profile):parseKorean(text,world.profile);}
+function describeAction(command){const list=command.commands||[command];return list.map(c=>c.item?`${c.action} ${c.item}`:c.field?`${c.action} ${c.field}=${c.value}`:c.action||c.reason||'unknown').join(' → ');}
+$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active){const raw=$('#command').value,command=selectedCommand(raw);diagnose(raw,command,'manual');execute(command);}};
+$('#mic').onclick=()=>{voiceError=false;if(speech.recording)speech.stop();else if(!speech.active&&health.ready){diagnostics.begin(speech.language);speech.start();}refresh();};
+$('#connection-retry').onclick=()=>health.check();
+$('#retry-audio').onclick=()=>{if(health.ready&&!speech.active){voiceError=false;diagnostics.update({error:null,failureStage:null,httpStatus:null,waitMs:0,result:'Повторная отправка по нажатию пользователя'});speech.retry();}};
+$('#stt-language').onchange=event=>{if(speech.setLanguage(event.target.value)){if(diagnostics.data.stage==='idle')diagnostics.begin(speech.language);last=null;feedback(event.target.value==='ru'?'Русский тестовый режим. Можно говорить или писать простые русские команды.':'Корейский режим. Состояние героя и комнаты сохранено.');}refresh();};
+$('#copy-voice-report').onclick=async()=>{try{await navigator.clipboard.writeText(diagnostics.report());$('#copy-report-status').textContent='Отчёт скопирован';}catch{$('#voice-report').focus();$('#voice-report').select();$('#copy-report-status').textContent='Выделено: скопируйте текст вручную';}};
+window.addEventListener('beforeunload',event=>{if(speech?.recording||speech?.pending){event.preventDefault();event.returnValue='';}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')health.checkAfterIdle();});
 $('#cancel-recording').onclick=()=>{speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
 $('#repeat').onclick=()=>{if(last)execute(last);};
 $('#reset').onclick=()=>{
@@ -133,7 +146,7 @@ $('#reset').onclick=()=>{
 function changeLevel(home){
   revision++;speech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V2.5':'Korean Stickman — Создай своего героя';
+  document.title=home?'Korean Stickman — Мой дом · V2.6':'Korean Stickman — Создай своего героя';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
@@ -154,3 +167,5 @@ if(!world.storageAvailable)feedback('Сохранение недоступно. 
 else if(world.profile.awake)feedback('С возвращением! Герой сохранён. Его характеристики можно менять.');
 refresh();
 if(new URLSearchParams(location.search).get('level')==='2')changeLevel(true);
+
+health.check();
