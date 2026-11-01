@@ -9,7 +9,7 @@ import {POSES} from '../src/geometry.js';
 import {appearance} from '../src/catalog.js';
 import {wristWorld,clonePose} from '../src/room-motion.js';
 const memory=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v)};};
-function make(...ids){const storage=memory(),state=new RoomState(storage);for(const item of ids)state.commit(state.plan({action:'create',item}));return {state,storage};}
+function make(...ids){const storage=memory(),state=new RoomState(storage);for(const item of ids){state.commit(state.plan({action:'create',item}));if(['book','water'].includes(item))state.objects[item].location.uv=item==='book'?(state.items[item]==='table'?[.61,.54]:[.24,.84]):(state.items[item]==='table'?[.80,.53]:[.20,.54]);}return {state,storage};}
 test('deleting a support drops actual locations straight down and persists them, never using floor creation slots',()=>{
   const {state,storage}=make('desk','book','water');state.objects.book.location.uv=[.66,.49];state.objects.book.location.height=138;
   const original=structuredClone({book:state.objects.book.location,water:state.objects.water.location}),plan=state.plan({action:'remove',item:'desk'});

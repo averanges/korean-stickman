@@ -8,7 +8,7 @@ import {RoomRenderer} from '../src/room-renderer.js';
 import {POSES,bodyFrame,mixPose} from '../src/geometry.js';
 import {itemArt} from '../src/room-art.js';
 const memory=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v)};};
-function create(state,...ids){for(const item of ids){const p=state.plan({action:'create',item});assert.equal(p.ok,true,p.message);state.commit(p);}}
+function create(state,...ids){for(const item of ids){const p=state.plan({action:'create',item});assert.equal(p.ok,true,p.message);state.commit(p);if(['book','water'].includes(item)){state.objects[item].location.uv=item==='book'?(state.items[item]==='table'?[.61,.54]:[.24,.84]):(state.items[item]==='table'?[.80,.53]:[.20,.54]);}}}
 function fakeRenderer(state,events=[]){return {connect(){},cancel(){},async confused(){},synchronize(){},async run(plan){events.push(plan.action+':'+plan.item);await new Promise(r=>setImmediate(r));return true;},async perform(op,context,hooks){events.push(op.action+':'+op.item);await new Promise(r=>setImmediate(r));if(op.action==='move_to')state.moveHero(context.position,context.facing);if(['take','put'].includes(op.action))hooks.contact();if(op.action==='use')assert.equal(state.held,op.item);return true;}};}
 const step=text=>parseRoom(text,{debug:true});
 test('A* handles several obstacles, all current interaction points and unreachable destinations',()=>{

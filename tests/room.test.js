@@ -44,13 +44,13 @@ test('hands reach every grip with fixed arm lengths, and held props return to ex
 });
 test('serial room queue commits only completed animations and compound creation respects desk order',async()=>{
   const state=new RoomState(memory()),events=[];let active=0,peak=0;
-  const renderer={async run(plan){active++;peak=Math.max(peak,active);events.push([plan.item,plan.next[plan.item]]);await new Promise(resolve=>setImmediate(resolve));active--;return true;},async perform(op,context,hooks){active++;peak=Math.max(peak,active);await new Promise(resolve=>setImmediate(resolve));if(op.action==='move_to')state.moveHero(context.position,context.facing);if(['take','put'].includes(op.action))hooks.contact();active--;return true;},async confused(){},cancel(){}};
+  const renderer={async run(plan){active++;peak=Math.max(peak,active);events.push([plan.item,plan.next[plan.item]]);await new Promise(resolve=>setImmediate(resolve));active--;return true;},async perform(op,context,hooks){active++;peak=Math.max(peak,active);await new Promise(resolve=>setImmediate(resolve));if(op.action==='move_to')state.moveHero(context.position,context.facing);if(['receive','take','put'].includes(op.action)){hooks.contact();if(op.action==='receive')events.push([op.item,'hand']);if(op.action==='put')events.push([op.item,state.items[op.item]]);}active--;return true;},async confused(){},cancel(){}};
   const queue=new RoomController(state,renderer);const first=queue.run(parseRoom('책상이 있어요')),second=queue.run(parseRoom('책하고 물이 있어요'));
-  assert.equal(state.items.desk,null);await Promise.all([first,second]);assert.equal(peak,1);assert.deepEqual(events,[['desk','floor'],['book','table'],['water','table']]);
+  assert.equal(state.items.desk,null);await Promise.all([first,second]);assert.equal(peak,1);assert.deepEqual(events,[['desk','floor'],['book','hand'],['book','table'],['water','hand'],['water','table']]);
   assert.equal((await queue.run(parseRoom('책을 읽어요'))).type,'success');assert.equal(state.items.book,'table');assert.equal(queue.busy,false);assert.equal(peak,1);
 });
 test('leaving room cancels current and queued commands without phantom items',async()=>{
-  const state=new RoomState(memory());let finish;const renderer={run:()=>new Promise(resolve=>{finish=resolve;}),cancel(){},async confused(){}};
+  const state=new RoomState(memory());let finish,started;const ready=new Promise(resolve=>{started=resolve;}),renderer={run:()=>new Promise(resolve=>{finish=resolve;started();}),cancel(){},async confused(){}};
   const queue=new RoomController(state,renderer),current=queue.run(parseRoom('책상이 있어요')),pending=queue.run(parseRoom('책이 있어요'));
-  queue.cancel();finish(true);assert.equal((await current).cancelled,true);assert.equal((await pending).cancelled,true);assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  await ready;queue.cancel();finish(true);assert.equal((await current).cancelled,true);assert.equal((await pending).cancelled,true);assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
 });

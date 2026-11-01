@@ -10,7 +10,7 @@ import {worldPoint,wristWorld,useTarget,reachPose} from '../src/room-motion.js';
 import {POSES,articulate} from '../src/geometry.js';
 import {furnitureArt} from '../src/room-furniture.js';
 const memory=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v)};};
-function populated(){const storage=memory(),state=new RoomState(storage);for(const id of Object.keys(ROOM_ITEMS)){const plan=state.plan({action:'create',item:id});assert.equal(plan.ok,true,id);state.commit(plan);}return {state,storage};}
+function populated(){const storage=memory(),state=new RoomState(storage);for(const id of Object.keys(ROOM_ITEMS)){const plan=state.plan({action:'create',item:id});assert.equal(plan.ok,true,id);state.commit(plan);if(state.objects[id].location.surface==='bed'){state.objects[id].location={kind:'floor',surface:'floor',uv:({apple:[.40,.87],phone:[.68,.84],milk:[.84,.78]})[id]||[.20,.54],height:0};}}return {state,storage};}
 function rendererFor(state){
  const renderer=Object.create(RoomRenderer.prototype),frames=[];
  Object.assign(renderer,{state,pose:structuredClone(POSES.stand),poseFacing:'right',carry:{angle:0,open:0},generation:0,scene:{dataset:{}},draw(){},phase(value){this.scene.dataset.phase=value;},async tween(duration,update){for(let i=0;i<=12;i++){update(i/12);frames.push({phase:this.scene.dataset.phase,pose:structuredClone(this.pose),carry:{...this.carry},posture:state.hero.posture});}return true;}});

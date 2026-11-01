@@ -16,7 +16,7 @@ export function wristWorld(position,pose,facing='right'){return worldPoint(posit
 export function reachPose(position,point,base=POSES.stand,facing='right'){return {...clonePose(base),rw:localPoint(position,point,facing)};}
 export function gripWorld(id,placement){return itemLocation(id,placement).point.map((v,i)=>v+GRIPS[id][i]);}
 export function gripExtension(position,context){
-  const pose=reachPose(position,context.grip,context.location.kind==='floor'?floorPose():POSES.stand,context.facing),shoulder=bodyFrame(pose).shoulderRight;
+  const pose=reachPose(position,context.grip,context.location.height<85?floorPose():POSES.stand,context.facing),shoulder=bodyFrame(pose).shoulderRight;
   return Math.hypot(pose.rw[0]-shoulder[0],pose.rw[1]-shoulder[1]);
 }
 export function reachableGrip(position,context){return gripExtension(position,context)<=141.9;}

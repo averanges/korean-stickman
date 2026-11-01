@@ -8,7 +8,7 @@ import {POSES} from '../src/geometry.js';
 import {RoomRenderer} from '../src/room-renderer.js';
 import {Renderer} from '../src/renderer.js';
 import {appearance} from '../src/catalog.js';
-const roomWith=(...ids)=>{const room=new RoomState(undefined);for(const item of ids)room.commit(room.plan({action:'create',item}));return room;};
+const roomWith=(...ids)=>{const room=new RoomState(undefined);for(const item of ids){room.commit(room.plan({action:'create',item}));if(['book','water'].includes(item))room.objects[item].location.uv=item==='book'?[.61,.54]:[.80,.53];}return room;};
 const sorted=points=>points.map(p=>p.map(v=>Math.round(v*1e6)/1e6)).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
 test('left-side regression selects a short reachable approach rather than the fixed front-of-desk target',()=>{
   const room=roomWith('desk','book','water');

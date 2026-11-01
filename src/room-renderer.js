@@ -24,6 +24,7 @@ export class RoomRenderer{
   phase(value,message){this.scene.dataset.phase=value;this.onPhase(message);}
   synchronize(){this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
   cancel(){this.generation++;this.route=[];this.navigation=null;this.heading=null;this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
+  setPlacement(plan){this.placement=plan;this.navigation=null;this.draw();}
   setDebug(value){this.debug=value;this.draw();}
   tween(duration,update){const generation=this.generation;duration=this.reduced?Math.min(duration,180):duration;return new Promise(resolve=>{const start=performance.now();const tick=now=>{if(generation!==this.generation){resolve(false);return;}const t=Math.min(1,(now-start)/duration);update(t);this.draw();if(t<1)requestAnimationFrame(tick);else resolve(true);};requestAnimationFrame(tick);});}
   poseTo(target,duration=650){const from=clonePose(this.pose);return this.tween(duration,t=>{this.pose=mixPose(from,target,ease(t));});}
@@ -81,6 +82,12 @@ export class RoomRenderer{
   async perform(operation,context,{contact}){
     const {action,item:id}=operation;this.scene.dataset.operation=action;this.scene.dataset.item=id;
     if(action==='move_to')return this.moveTo(context);
+    if(action==='receive'){
+      this.carry={angle:0,open:0,opacity:0};contact();this.phase('receive','Новый предмет появляется в руке героя.');
+      const from=clonePose(this.pose),target=carryPose();
+      const done=await this.tween(550,t=>{this.pose=mixPose(from,target,ease(t));this.carry.opacity=ease(t);this.carry.sparkle=Math.sin(t*Math.PI);});
+      if(!done)return false;this.carry={angle:0,open:0};this.draw();return true;
+    }
     if(['sit','lie_down','sleep','stand_up'].includes(action)){
       if(action!=='stand_up'&&!await this.turnTo('right'))return false;
       const posture={sit:'sitting',lie_down:'lying',sleep:'sleeping',stand_up:'standing'}[action];
@@ -97,7 +104,7 @@ export class RoomRenderer{
     if(action==='take'||action==='put'){
       if(!await this.turnTo(context.facing))return false;
       this.interactionSurface=context.location.surface;
-      const base=context.location.kind==='floor'?floorPose():POSES.stand,reach=reachPose(this.position,context.grip,base,this.facing);
+      const base=context.location.height<85?floorPose():POSES.stand,reach=reachPose(this.position,context.grip,base,this.facing);
       this.phase('reach',action==='take'?'Кисть приближается к предмету.':'Возвращаем предмет к его опоре.');
       if(!await this.poseTo(reach,800))return false;
       contact();this.carry={angle:0,open:0};this.phase('contact',action==='take'?'Контакт: предмет теперь в руке.':'Контакт: предмет снова на поверхности.');this.draw();
@@ -150,7 +157,7 @@ export class RoomRenderer{
     const id=this.state.held;if(!id)return '';const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);let sign=facingSign(this.facing);
     if(this.turn)sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);
     const grip=this.state.objects[id].grip;
-    return `<g data-held="${id}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true,lit:this.carry.lit,remaining:this.carry.remaining??1})}</g>`;
+    return `<g data-held="${id}" opacity="${this.carry.opacity??1}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true,lit:this.carry.lit,remaining:this.carry.remaining??1})}${this.carry.sparkle?`<path d="M-28-48l-7-10M27-42l9-8M0-63v-9" fill="none" stroke="#efbd53" stroke-width="3" opacity="${this.carry.sparkle}"/>`:''}</g>`;
   }
   draw(){
     if(!this.layer||!this.visible||!this.state)return;const entries=[],items=this.previewItems||this.state.items;this.frameLayers=new Map();
@@ -160,12 +167,12 @@ export class RoomRenderer{
       const object=this.state.objects[id],e=this.effects[id]||{},placement=items[id],location=this.previewLocations?.[id]||object.location;
       if(isFurniture(id)){const depth=project(furnitureCenter(id))[1];entries.push({id,depth,html:`<g opacity="${e.opacity??1}">${furnitureArt(id,object.state)}</g>`});continue;}
       const point=e.point||project(location.uv,location.height);
-      entries.push({id,depth:e.depth??(placement==='table'?tableDepth+1:project(location.uv)[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
+      entries.push({id,depth:e.depth??(location.height>0?project(furnitureCenter(location.surface))[1]+1:project(location.uv)[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
     }
-    const support=this.restingSupport||this.state.hero.support,heroDepth=support?project(furnitureCenter(support))[1]+1:project(this.position)[1],overTable=this.interactionSurface==='desk'&&items.desk&&heroDepth<tableDepth+1;
+    const support=this.restingSupport||this.state.hero.support,heroDepth=support?project(furnitureCenter(support))[1]+1:project(this.position)[1],activeSurface=this.state.objects[this.interactionSurface],surfaceDepth=activeSurface?.surface?project(furnitureCenter(activeSurface.id))[1]:tableDepth,overTable=Boolean(activeSurface?.surface&&items[activeSurface.id]&&heroDepth<surfaceDepth+1);
     const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
     entries.push({id:'hero',depth:heroDepth,html:frames(overTable?'body':'all')+this.flagMarkup()+(overTable?'':this.heldMarkup())});
-    if(overTable)entries.push({id:'hero-arm',depth:tableDepth+2,html:frames('arm')+this.heldMarkup()});
+    if(overTable)entries.push({id:'hero-arm',depth:surfaceDepth+2,html:frames('arm')+this.heldMarkup()});
     entries.sort((a,b)=>a.depth-b.depth);this.layer.innerHTML=entries.map(({id,depth,html})=>`<g data-room-object="${id}" data-depth="${depth.toFixed(1)}">${html}</g>`).join('');
     this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.view=this.turn?.to||this.facing;this.scene.dataset.held=this.state.held||'';this.scene.dataset.posture=this.state.hero.posture;this.scene.dataset.heading=(this.heading||[0,0]).map(v=>v.toFixed(2)).join(',');
     if(this.navigation){this.scene.dataset.routeLength=routeLength(this.navigation.points).toFixed(1);this.scene.dataset.rawWaypoints=String(this.navigation.raw.length);}
@@ -175,15 +182,20 @@ export class RoomRenderer{
   debugArt(entries){
     const poly=b=>line([[b.u,b.v],[b.u+b.w,b.v],[b.u+b.w,b.v+b.d],[b.u,b.v+b.d]].map(p=>project(p)));
     const dot=(p,label,color='#c54d68')=>`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${color}"/><text x="${p[0]+7}" y="${p[1]-7}">${label}</text>`;
-    const targets=['book','water'].map(id=>{const t=this.state.target(id,{returning:this.state.held===id});return t?dot(project(t.position),id+': approach','#4b9173')+dot(t.grip,id+': grip'):'';}).join('');
-    const zones=['book','water'].map(id=>['floor','table'].map(place=>{const p=itemLocation(id,place).point;return `<ellipse cx="${p[0]}" cy="${p[1]}" rx="${id==='book'?44:18}" ry="12" fill="#6ca7c215" stroke="#77a0b6" stroke-dasharray="3 3"/>`;}).join('')).join('');
+    const targets=Object.keys(this.state.objects).filter(id=>this.state.objects[id].type==='portable').map(id=>{const t=this.state.target(id,{returning:this.state.held===id});return t?dot(project(t.position),id+': approach','#4b9173')+dot(t.grip,id+': grip'):'';}).join('');
+    const zones='';
     const bounds=entries.filter(e=>['hero','book','water'].includes(e.id)).map(e=>{const p=e.id==='hero'?project(this.position):this.state.point(e.id);if(!p)return '';const scale=e.id==='hero'?heroScale(this.position):1,w=e.id==='hero'?220*scale:e.id==='book'?90:38,h=e.id==='hero'?410*scale:e.id==='book'?50:70;return `<rect x="${p[0]-w/2}" y="${p[1]-h}" width="${w}" height="${h+6}" fill="none" stroke="#a490bc" stroke-dasharray="2 4"/>`;}).join('');
+    const placement=this.placement,loc=placement?.location;
+    const planned=loc?dot(project(loc.uv,loc.height),'put: '+loc.surface,'#1f8b88'):'';
+    const zonesPlan=placement?.zone?`<polygon points="${poly(placement.zone)}" fill="#eab13e18" stroke="#d89629" stroke-width="3" stroke-dasharray="8 4"/>${(placement.blockers||[]).map(id=>{const p=this.state.point(id);return p?dot(p,'move: '+id,'#db713e'):'';}).join('')}`:'';
+    const occupied=Object.values(this.state.objects).filter(o=>o.type==='portable'&&['floor','table','surface'].includes(o.location.kind)).map(o=>{const p=this.state.point(o.id);return `<rect x="${p[0]-o.visual.w/2}" y="${p[1]-o.visual.h}" width="${o.visual.w}" height="${o.visual.h+8}" fill="#b4719420" stroke="#b47194" stroke-dasharray="3 3"/>`;}).join('');
+    const surfaces=Object.values(this.state.objects).filter(o=>o.surface&&this.state.items[o.id]).map(o=>`<polygon points="${line([[o.footprint.u,o.footprint.v],[o.footprint.u+o.footprint.w,o.footprint.v],[o.footprint.u+o.footprint.w,o.footprint.v+o.footprint.d],[o.footprint.u,o.footprint.v+o.footprint.d]].map(p=>project(p,o.surface.height)))}" fill="#4baf9510" stroke="#459c86" stroke-dasharray="3 3"/>`).join('');
     const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);
     const n=this.navigation,origin=project(this.position),heading=this.heading||[0,0],headingLength=Math.hypot(...heading)||1,arrow=[origin[0]+heading[0]/headingLength*32,origin[1]+heading[1]/headingLength*32];
     return `<g font-size="11" font-family="monospace" fill="#60416c" stroke-width="1.4">${this.state.obstacles.map(b=>`<polygon points="${poly(b)}" fill="#d97c9728" stroke="#c54d68" stroke-dasharray="6 4"/>`).join('')}
       ${this.state.obstacles.map(b=>`<polygon points="${poly({u:b.u-NAV.radius,v:b.v-NAV.radius,w:b.w+NAV.radius*2,d:b.d+NAV.radius*2})}" fill="none" stroke="#d48351" stroke-dasharray="3 3"/>`).join('')}
       <polygon points="${poly({u:NAV.min,v:NAV.min,w:NAV.max-NAV.min,d:NAV.max-NAV.min})}" fill="none" stroke="#b5b6b2" stroke-dasharray="2 5"/>
-      <polygon points="${line([[TABLE.u,TABLE.v],[TABLE.u+TABLE.w,TABLE.v],[TABLE.u+TABLE.w,TABLE.v+TABLE.d],[TABLE.u,TABLE.v+TABLE.d]].map(p=>project(p,TABLE.height)))}" fill="none" stroke="#a490bc" stroke-dasharray="4 4"/>${zones}${bounds}
+      <polygon points="${line([[TABLE.u,TABLE.v],[TABLE.u+TABLE.w,TABLE.v],[TABLE.u+TABLE.w,TABLE.v+TABLE.d],[TABLE.u,TABLE.v+TABLE.d]].map(p=>project(p,TABLE.height)))}" fill="none" stroke="#a490bc" stroke-dasharray="4 4"/>${zones}${bounds}${surfaces}${occupied}${zonesPlan}${planned}
       ${n?`<polyline data-nav="raw" points="${line(n.raw.map(p=>project(p)))}" fill="none" stroke="#9997a2" stroke-width="2" stroke-dasharray="3 4"/><polyline data-nav="optimized" points="${line(n.points.map(p=>project(p)))}" fill="none" stroke="#328767" stroke-width="3"/>${n.candidates.map(c=>`<circle cx="${project(c.position)[0]}" cy="${project(c.position)[1]}" r="2.6" fill="#aa9b86"/>`).join('')}${dot(project(n.start),'S','#4c86b6')}${dot(project(n.end),'E','#d08c32')}`:''}${targets}
       ${this.heading?`<path data-nav="heading" d="M${origin.join(' ')}L${arrow.join(' ')}" fill="none" stroke="#dc8b2e" stroke-width="4"/><circle cx="${arrow[0]}" cy="${arrow[1]}" r="4" fill="#dc8b2e"/>`:''}
       <text x="90" y="615">S start · E goal · gray A* / green safe path</text>
