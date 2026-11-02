@@ -11,18 +11,18 @@ test('all home commands and unambiguous particle-free forms map to room intents 
   for(const text of ['책이 있어요?','책이 안 있어요','책이 없어요 책이 있어요','책을 먹어요','저는 학생이에요','물이','책상','물하고 책상이 없어요'])assert.equal(parseRoom(text).ok,false,text);
 });
 test('empty room, surface selection, no auto-move when desk appears, removal relocates only tabletop objects',()=>{
-  const state=new RoomState(memory());assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  const state=new RoomState(memory());assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null,notebook:null,pen:null,computer:null,television:null});
   apply(state,'책이 있어요');assert.equal(state.items.book,'floor');apply(state,'책상이 있어요');assert.equal(state.items.book,'floor');
-  apply(state,'물이 있어요');assert.equal(state.items.water,'table');apply(state,'책상이 없어요');assert.deepEqual(state.items,{desk:null,book:'floor',water:'floor',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  apply(state,'물이 있어요');assert.equal(state.items.water,'table');apply(state,'책상이 없어요');assert.deepEqual(state.items,{desk:null,book:'floor',water:'floor',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null,notebook:null,pen:null,computer:null,television:null});
   apply(state,'책상이 있어요');assert.equal(state.items.water,'floor');
   assert.equal(state.plan({action:'create',item:'book'}).reason,'duplicate');
   apply(state,'책이 없어요');assert.equal(state.plan({action:'use',item:'book'}).reason,'missing');
 });
 test('room saves independently of hero, recovers invalid table placements and leaves other storage untouched',()=>{
   const storage=memory();storage.setItem('korean-stickman.hero.v2','preserved-hero');const state=new RoomState(storage);
-  apply(state,'책상이 있어요');apply(state,'책하고 물이 있어요');assert.deepEqual(new RoomState(storage).items,{desk:'floor',book:'table',water:'table',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  apply(state,'책상이 있어요');apply(state,'책하고 물이 있어요');assert.deepEqual(new RoomState(storage).items,{desk:'floor',book:'table',water:'table',chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null,notebook:null,pen:null,computer:null,television:null});
   state.reset();assert.equal(storage.getItem('korean-stickman.hero.v2'),'preserved-hero');
-  storage.setItem(ROOM_STORAGE_KEY,JSON.stringify({version:1,items:{desk:null,book:'table',water:'unexpected'}}));assert.deepEqual(new RoomState(storage).items,{desk:null,book:'floor',water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  storage.setItem(ROOM_STORAGE_KEY,JSON.stringify({version:1,items:{desk:null,book:'table',water:'unexpected'}}));assert.deepEqual(new RoomState(storage).items,{desk:null,book:'floor',water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null,notebook:null,pen:null,computer:null,television:null});
 });
 test('routes keep a clearance around occupied desk footprint',()=>{
   const destinations=[START,...['book','water'].flatMap(id=>['table','floor'].map(place=>approach(id,place)))];
@@ -52,5 +52,5 @@ test('serial room queue commits only completed animations and compound creation 
 test('leaving room cancels current and queued commands without phantom items',async()=>{
   const state=new RoomState(memory());let finish,started;const ready=new Promise(resolve=>{started=resolve;}),renderer={run:()=>new Promise(resolve=>{finish=resolve;started();}),cancel(){},async confused(){}};
   const queue=new RoomController(state,renderer),current=queue.run(parseRoom('책상이 있어요')),pending=queue.run(parseRoom('책이 있어요'));
-  await ready;queue.cancel();finish(true);assert.equal((await current).cancelled,true);assert.equal((await pending).cancelled,true);assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null});
+  await ready;queue.cancel();finish(true);assert.equal((await current).cancelled,true);assert.equal((await pending).cancelled,true);assert.deepEqual(state.items,{desk:null,book:null,water:null,chair:null,bed:null,apple:null,phone:null,milk:null,lamp:null,notebook:null,pen:null,computer:null,television:null});
 });

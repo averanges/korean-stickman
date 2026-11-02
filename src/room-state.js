@@ -3,6 +3,7 @@ import {TABLE,FLOOR_SLOTS,TABLE_SLOTS,START,GRIPS,project,approach,distance,faci
 import {planRoute,walkable,chooseRoute,NAV} from './room-navigation.js';
 import {reachableGrip,gripExtension} from './room-motion.js';
 import {releaseSurface} from './room-surfaces.js';
+import {LESSONS,runLesson} from './room-lessons.js';
 export * from './room-space.js';
 export const ROOM_STORAGE_KEY='korean-stickman.room.v1';
 import {ROOM_ITEMS,KOREAN,OBJECT_TYPES,placementFor,isFurniture,furnitureCenter} from './room-catalog.js';
@@ -20,8 +21,10 @@ export function parseRoom(raw,{debug=false}={}){
   if(debug){const m=heard.match(/^\/(move_to|take|put|use|open|close|sit|lie_down|sleep|stand_up|toggle)\s+(\w+)$/u);if(m&&ROOM_ITEMS[m[2]])return {...result(m[1],m[2]),mode:'step'};}
   if(/[?？]/u.test(heard))return rejected;
   if(/^(책하고물|책과물|책이랑물)(이|가)?(있어요|있습니다)$/u.test(text))return {ok:true,heard,commands:[{action:'create',item:'book'},{action:'create',item:'water'}],reason:'two-items'};
-  const m=text.match(/^(책상|책|물|의자|침대|사과|휴대폰|우유|전등)(?:이|가)?(있어요|없어요|있습니다|없습니다)$/u);
+  const m=text.match(/^(책상|책|물|의자|침대|사과|휴대폰|우유|전등|공책|펜|컴퓨터|텔레비전)(?:이|가)?(있어요|없어요|있습니다|없습니다)$/u);
   if(m)return result(m[2].startsWith('있')?'create':'remove',names[m[1]]);
+  for(const [id,lesson] of Object.entries(LESSONS))if(lesson.commands.includes(text))return result('lesson',id);
+  if(text==='자요')return result('sleep','bed');
   if(/^(일어나요|일어납니다)$/u.test(text))return result('stand_up',null);
   for(const [name,id] of Object.entries(names)){
     const tail=text.startsWith(name)?text.slice(name.length).replace(/^(에서|에|을|를)/u,''):null;if(tail===null)continue;
@@ -252,6 +255,7 @@ export class RoomController{
       try{
         if(!command.ok){result={message:command.message,type:'error'};await this.renderer.confused();}
         else for(const action of command.commands){
+          if(action.action==='lesson'){result=await runLesson(this,action.item,epoch);if(result.cancelled||result.type==='error')break;continue;}
           if(action.action==='create'&&this.state.items[action.item]){this.status('create',action.item,'error','duplicate');result={message:`${ROOM_ITEMS[action.item]} уже есть в комнате.`,type:''};continue;}
           if(this.state.held&&['sit','lie_down','sleep','toggle'].includes(action.action)){result={message:'Сначала положи удерживаемый предмет.',type:'error'};break;}
           if(this.state.hero.posture!=='standing'&&action.action!=='stand_up'&&!(action.action==='sleep'&&this.state.hero.support===action.item)){result=await this.operate({action:'stand_up',item:this.state.hero.support},epoch);if(result.cancelled||result.type==='error')break;}

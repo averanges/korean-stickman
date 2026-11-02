@@ -130,7 +130,7 @@ speech=new BrowserSpeech({
   },
   onError:code=>{
     voiceError=true;
-    const message=code==='no-compatible-server'?ERROR_MESSAGES[code]:speech.pending&&diagnostics.data.exhausted?'Не удалось обработать запись. Можно попробовать снова или записать новую фразу.':code==='unknown-command'?`Я услышал «${String(diagnostics.data.transcript||'').slice(0,200)}», но не понял команду.`:ERROR_MESSAGES[code]||'Не удалось распознать речь. Попробуйте ещё раз.';
+    const message=code==='game-error'&&diagnostics.data.result?diagnostics.data.result:code==='no-compatible-server'?ERROR_MESSAGES[code]:speech.pending&&diagnostics.data.exhausted?'Не удалось обработать запись. Можно попробовать снова или записать новую фразу.':code==='unknown-command'?`Я услышал «${String(diagnostics.data.transcript||'').slice(0,200)}», но не понял команду.`:ERROR_MESSAGES[code]||'Не удалось распознать речь. Попробуйте ещё раз.';
     feedback(message+(speech.pending?' Запись сохранена до повторной отправки или удаления.':''),'error');refresh();
   },
   onEnd:()=>{speechPhase='idle';refresh();},
@@ -163,7 +163,7 @@ $('#reset').onclick=()=>{
 function changeLevel(home){
   revision++;speech.cancel();if(testSpeech?.active)testSpeech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V2.8':'Korean Stickman — Создай своего героя · V2.8';
+  document.title=home?'Korean Stickman — Мой дом · V2.9':'Korean Stickman — Создай своего героя · V2.9';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';

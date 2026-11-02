@@ -58,8 +58,8 @@ test('reloading a newly received object retains one owner and a usable put desti
 });
 test('all nine remain navigable after sequential creation and do not overlap on each support',async()=>{
  const {state,controller}=setup();for(const text of ['책상이 있어요','의자가 있어요','침대가 있어요','전등이 있어요','책이 있어요','물이 있어요','우유가 있어요','휴대폰이 있어요','사과가 있어요'])await run(controller,text);
- assert.equal(Object.values(state.items).filter(Boolean).length,9);for(const id of Object.keys(ROOM_ITEMS)){const p=state.prepare({action:'move_to',item:id});assert.equal(p.ok,true,id);for(let i=1;i<p.route.length;i++)assert.ok(clearSegment(p.route[i-1],p.route[i],state.obstacles));}
- const portable=Object.values(state.objects).filter(o=>o.type==='portable');for(let i=0;i<portable.length;i++)for(let j=i+1;j<portable.length;j++){const a=portable[i],b=portable[j];if(a.location.surface!==b.location.surface)continue;const p=state.point(a.id),q=state.point(b.id);assert.ok(Math.abs(p[0]-q[0])>=(a.visual.w+b.visual.w)/2+5||p[1]<q[1]-b.visual.h-5||p[1]-a.visual.h>q[1]+5);}
+ assert.equal(Object.values(state.items).filter(Boolean).length,9);for(const id of Object.keys(ROOM_ITEMS).filter(id=>state.items[id])){const p=state.prepare({action:'move_to',item:id});assert.equal(p.ok,true,id);for(let i=1;i<p.route.length;i++)assert.ok(clearSegment(p.route[i-1],p.route[i],state.obstacles));}
+ const portable=Object.values(state.objects).filter(o=>o.type==='portable'&&state.items[o.id]);for(let i=0;i<portable.length;i++)for(let j=i+1;j<portable.length;j++){const a=portable[i],b=portable[j];if(a.location.surface!==b.location.surface)continue;const p=state.point(a.id),q=state.point(b.id);assert.ok(Math.abs(p[0]-q[0])>=(a.visual.w+b.visual.w)/2+5||p[1]<q[1]-b.visual.h-5||p[1]-a.visual.h>q[1]+5);}
 });
 test('clearing applies to all four fixed furniture zones, and duplicate creation preserves rest or an occupied hand',async()=>{
  for(const [id,text,uv] of [['desk','책상이 있어요',[.65,.45]],['bed','침대가 있어요',[.18,.30]],['chair','의자가 있어요',[.44,.75]],['lamp','전등이 있어요',[.4175,.0925]]]){

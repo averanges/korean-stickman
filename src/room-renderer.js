@@ -1,5 +1,6 @@
 import {ROOM_ITEMS,isFurniture,furnitureCenter} from './room-catalog.js';
 import {furnitureArt} from './room-furniture.js';
+import {animateLesson,lessonProps,friendArt} from './room-lesson-art.js';
 import {restPose} from './room-postures.js';
 import {POSES,mixPose,ease,lerp,flagAnchor} from './geometry.js';
 import {TABLE,FLOOR_SLOTS,project,itemLocation,heroScale,facingSign,facingDirection,landingPoint} from './room-space.js';
@@ -15,14 +16,17 @@ export class RoomRenderer{
     this.hero=hero;this.scene=document.querySelector('#home-scene');this.onPhase=onPhase;this.generation=0;this.visible=false;this.debug=false;
     this.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;this.extensionHandlers=new Map();
     this.scene.innerHTML=roomArt()+'<g id="home-objects"></g><g id="home-debug" pointer-events="none"></g>';
-    this.layer=this.scene.querySelector('#home-objects');this.overlay=this.scene.querySelector('#home-debug');this.cancel();
+    this.windowGuest=this.scene.querySelector('#home-window-guest');this.layer=this.scene.querySelector('#home-objects');this.overlay=this.scene.querySelector('#home-debug');this.cancel();
   }
   connect(state){this.state=state;this.synchronize();}
+  lesson(kind,target){return animateLesson(this,kind,target);}
+  async friendEnter(){this.visitor={visible:0,wave:0};return this.tween(550,t=>{this.visitor={visible:ease(t),wave:t*3};});}
+  finishLesson(){this.lessonVisual=null;this.visitor=null;this.interactionSurface=null;this.draw();}
   registerAnimation(action,handler){if(!['open','close'].includes(action)||typeof handler!=='function')throw Error('invalid-animation-extension');this.extensionHandlers.set(action,handler);}
   get position(){return this.state.hero.position;}
   get facing(){return this.state.hero.facing;}
   phase(value,message){this.scene.dataset.phase=value;this.onPhase(message);}
-  synchronize(){this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
+  synchronize(){this.lessonVisual=null;this.lessonResult=null;this.visitor=null;this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
   cancel(){this.generation++;this.route=[];this.navigation=null;this.heading=null;this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
   setPlacement(plan){this.placement=plan;this.navigation=null;this.draw();}
   setDebug(value){this.debug=value;this.draw();}
@@ -143,7 +147,7 @@ export class RoomRenderer{
   heroFrame(facing,opacity=1,part='all'){
     const p=project(this.position),scale=heroScale(this.position),sign=facingSign(facing),held=this.state.held;
     const backBlend=this.turn?lerp(this.turn.from==='back'?1:0,this.turn.to==='back'?1:0,this.turn.t):(facing==='back'?1:0);
-    if(!this.frameLayers.has(facing))this.frameLayers.set(facing,this.hero.roomLayers(poseInFacing(this.pose,this.poseFacing||this.facing,facing),{using:Boolean(held),question:this.question,facing,hideFlag:true,backBlend}));
+    if(!this.frameLayers.has(facing))this.frameLayers.set(facing,this.hero.roomLayers(poseInFacing(this.pose,this.poseFacing||this.facing,facing),{using:Boolean(held||this.lessonVisual),question:this.question,facing,hideFlag:true,backBlend}));
     const layers=this.frameLayers.get(facing),markup=part==='all'?layers.body+layers.arm:layers[part];
     return `<g opacity="${opacity}"><g transform="translate(${p.join(' ')}) scale(${scale*sign} ${scale}) translate(-370 -675)">${markup}</g></g>`;
   }
@@ -157,7 +161,7 @@ export class RoomRenderer{
     const id=this.state.held;if(!id)return '';const wrist=wristWorld(this.position,this.pose,this.poseFacing||this.facing);let sign=facingSign(this.facing);
     if(this.turn)sign=lerp(facingSign(this.turn.from),facingSign(this.turn.to),this.turn.t);
     const grip=this.state.objects[id].grip;
-    return `<g data-held="${id}" opacity="${this.carry.opacity??1}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true,lit:this.carry.lit,remaining:this.carry.remaining??1})}${this.carry.sparkle?`<path d="M-28-48l-7-10M27-42l9-8M0-63v-9" fill="none" stroke="#efbd53" stroke-width="3" opacity="${this.carry.sparkle}"/>`:''}</g>`;
+    return `<g data-held="${id}" opacity="${this.carry.opacity??1}" transform="translate(${wrist.join(' ')}) scale(${sign} 1) rotate(${this.carry.angle}) translate(${-grip[0]} ${-grip[1]})">${itemArt(id,{open:this.carry.open,held:true,lit:this.carry.lit,remaining:this.carry.remaining??1,screen:this.carry.screen})}${this.carry.sparkle?`<path d="M-28-48l-7-10M27-42l9-8M0-63v-9" fill="none" stroke="#efbd53" stroke-width="3" opacity="${this.carry.sparkle}"/>`:''}</g>`;
   }
   draw(){
     if(!this.layer||!this.visible||!this.state)return;const entries=[],items=this.previewItems||this.state.items;this.frameLayers=new Map();
@@ -165,11 +169,16 @@ export class RoomRenderer{
     if(items.desk){const e=this.effects.desk||{},c=project([TABLE.u+TABLE.w/2,TABLE.v+TABLE.d/2]);entries.push({id:'desk',depth:tableDepth,html:`<g opacity="${e.opacity??1}" transform="translate(${c.join(' ')}) scale(${e.scale??1}) translate(${-c[0]} ${-c[1]})">${deskArt()}</g>`});}
     for(const id of Object.keys(ROOM_ITEMS).filter(id=>id!=='desk'))if(items[id]&&items[id]!=='hand'){
       const object=this.state.objects[id],e=this.effects[id]||{},placement=items[id],location=this.previewLocations?.[id]||object.location;
-      if(isFurniture(id)){const depth=project(furnitureCenter(id))[1];entries.push({id,depth,html:`<g opacity="${e.opacity??1}">${furnitureArt(id,object.state)}</g>`});continue;}
+      if(isFurniture(id)){const depth=project(furnitureCenter(id))[1];entries.push({id,depth,html:`<g opacity="${e.opacity??1}">${furnitureArt(id,{...object.state,movie:this.lessonVisual?.kind==='movie'&&id==='television'?this.lessonVisual.t:null})}</g>`});continue;}
       const point=e.point||project(location.uv,location.height);
-      entries.push({id,depth:e.depth??(location.height>0?project(furnitureCenter(location.surface))[1]+1:project(location.uv)[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id)}</g>`});
+      entries.push({id,depth:e.depth??(location.height>0?project(furnitureCenter(location.surface))[1]+1:project(location.uv)[1]),html:`<g data-placement="${placement}" transform="translate(${point.join(' ')})" opacity="${e.opacity??1}">${itemArt(id,{screen:this.lessonVisual?.kind==='work'&&id==='computer'?'work':this.lessonVisual?.kind==='homework'&&id==='notebook'?'homework':null,frame:this.lessonVisual?.t||0})}</g>`});
     }
+    if(this.lessonVisual)entries.push({id:'lesson-props',depth:tableDepth+1.5,html:lessonProps({...this.lessonVisual,seated:false},null)});
+    if(this.lessonResult)entries.push({id:'lesson-result',depth:this.lessonResult.point[1]+1,html:lessonProps(null,this.lessonResult)});
+    if(this.windowGuest)this.windowGuest.innerHTML=friendArt(this.visitor?.visible||0,this.visitor?.wave||0);
+    this.scene.dataset.lesson=this.lessonVisual?.kind||'';
     const support=this.restingSupport||this.state.hero.support,heroDepth=support?project(furnitureCenter(support))[1]+1:project(this.position)[1],activeSurface=this.state.objects[this.interactionSurface],surfaceDepth=activeSurface?.surface?project(furnitureCenter(activeSurface.id))[1]:tableDepth,overTable=Boolean(activeSurface?.surface&&items[activeSurface.id]&&heroDepth<surfaceDepth+1);
+    if(this.lessonVisual?.seated)entries.push({id:'lesson-seat',depth:heroDepth-.5,html:lessonProps({...this.lessonVisual,kind:'seat',point:null},null)});
     const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
     entries.push({id:'hero',depth:heroDepth,html:frames(overTable?'body':'all')+this.flagMarkup()+(overTable?'':this.heldMarkup())});
     if(overTable)entries.push({id:'hero-arm',depth:surfaceDepth+2,html:frames('arm')+this.heldMarkup()});

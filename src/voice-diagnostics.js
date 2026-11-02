@@ -15,5 +15,5 @@ export class VoiceDiagnostics {
  begin(language){const connection=Object.fromEntries(['serverState','serverHttp','serverAttempts','serverError'].map(key=>[key,this.data?.[key]]));this.data={...connection,language,stage:'idle',permission:'не запрошен',sent:false};this.onChange(this);}
  update(details){for(const key of Object.keys(labels))if(Object.hasOwn(details,key))this.data[key]=details[key];this.onChange(this);}
  stage(stage,details={}){this.update({...details,stage,...(stage==='error'?{failureStage:details.failureStage||this.data.stage}:{})});}
- report(){return 'Korean Stickman V2.8 — последний голосовой запрос\n'+Object.entries(labels).map(([key,label])=>`${label}: ${safe(this.data[key])}`).join('\n');}
+ report(){return 'Korean Stickman V2.9 — последний голосовой запрос\n'+Object.entries(labels).map(([key,label])=>`${label}: ${safe(this.data[key])}`).join('\n');}
 }
