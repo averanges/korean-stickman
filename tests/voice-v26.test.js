@@ -60,7 +60,7 @@ test('unready backend preserves the full recording without sending it; explicit 
 });
 test('microphone rejection, unknown command and game failure have distinct stages and allow a new recording',async()=>{
  const denied=recorderHarness({denied:true});await denied.speech.start();assert.ok(denied.errors.includes('not-allowed'));assert.equal(denied.stages.at(-1).failureStage,'requesting_microphone');
- const audioDenied=recorderHarness({resumeRejected:true});await audioDenied.speech.start();assert.ok(audioDenied.errors.includes('not-allowed'));assert.equal(audioDenied.speech.active,false);
+ const audioDenied=recorderHarness({resumeRejected:true});await audioDenied.speech.start();assert.equal(audioDenied.speech.recording,true);assert.equal(audioDenied.errors.length,0);audioDenied.speech.cancel();assert.equal(audioDenied.speech.active,false);
  for(const error of ['unknown-command','game-error']){const h=recorderHarness({onFinal:()=>({error})});await h.speech.start();h.advance(1000);h.speech.stop();await flush();assert.ok(h.errors.includes(error));assert.equal(h.speech.pending,null);await h.speech.start();assert.equal(h.speech.recording,true);h.speech.cancel();}
 });
 test('diagnostic copy is an allowlisted text report, redacts credentials and stores no audio or cookies',()=>{

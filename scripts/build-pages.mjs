@@ -1,7 +1,7 @@
 import {mkdir,readFile,writeFile,readdir,lstat,copyFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-export async function buildPages({apiBase=process.env.API_BASE_URL,netlifyBase=process.env.NETLIFY_API_BASE_URL||'',vercelBase=process.env.VERCEL_API_BASE_URL||'',output}={}){
+export async function buildPages({apiBase=process.env.API_BASE_URL,netlifyBase=process.env.NETLIFY_API_BASE_URL??'https://incandescent-lollipop-01828a.netlify.app',vercelBase=process.env.VERCEL_API_BASE_URL??'https://korean-stickman.vercel.app',output}={}){
   if(!apiBase)throw Error('Set public API_BASE_URL, for example https://your-service.onrender.com');
   const api=new URL(apiBase);
   if(api.protocol!=='https:'||api.username||api.password||api.pathname!=='/'||api.search||api.hash)throw Error('API_BASE_URL must be an HTTPS origin without credentials or path');

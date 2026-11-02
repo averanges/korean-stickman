@@ -47,8 +47,8 @@ test('shared timeout, Groq errors and rate limits retain safe metadata and relea
 test('stream read aborts promptly and Web binary oversize has a normal JSON response',async()=>{
  const abort=new AbortController(),stream=new ReadableStream({start(){}});const pending=readStream(stream,100,abort.signal);abort.abort();await assert.rejects(pending,e=>e.code==='timeout');
 });
-test('registry defaults Render, leaves undeployed alternatives blank and validates origins without changing selection',()=>{
- const registry=new SttServers();assert.equal(registry.selected,'render');assert.equal(registry.available('netlify'),false);assert.equal(registry.available('vercel'),false);assert.throws(()=>registry.select('netlify'));assert.equal(registry.selected,'render');
+test('registry defaults Render, includes deployed alternatives and validates origins without changing selection',()=>{
+ const registry=new SttServers();assert.equal(registry.selected,'render');assert.equal(registry.available('netlify'),true);assert.equal(registry.available('vercel'),true);assert.equal(registry.get('vercel').url,'https://korean-stickman.vercel.app');assert.equal(registry.selected,'render');
  for(const value of ['http://example.com','https://user:pass@example.com','https://example.com/path','https://example.com?key=secret','https://example.com/#secret'])assert.throws(()=>publicOrigin(value));
  const r=new SttServers(entries(),{hostname:'localhost',origin:'http://localhost:5173',protocol:'http:'});assert.equal(r.endpoint('render','transcribe',{local:true}),'/api/stt');r.select('netlify');assert.equal(r.endpoint(r.selected,'transcribe'),'https://netlify.example.com/transcribe');r.update('netlify',{url:'',enabled:false});assert.equal(r.selected,'netlify');assert.equal(r.available('netlify'),false);
 });
