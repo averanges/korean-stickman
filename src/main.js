@@ -1,3 +1,6 @@
+import {LanguageService,languageMessage} from './language-service.js';
+import {LanguageJournal} from './language-journal.js';
+import {safeContext,validateForWorld,engineCommand} from './language-contract.js';
 import {SttServers,publicOrigin} from './stt-servers.js';
 import {createDiagnosticSpeech} from './stt-diagnostic.js';
 import {SttConnection} from './stt-connection.js';
@@ -25,7 +28,10 @@ let controller, speech, last=null, revision=0, voiceError=false, speechPhase='id
 let recordedMs=0,voiceStage='idle',testSpeech,serverChecks,retryingConnection=false;
 const registry=new SttServers();
 const testDiagnostics=new VoiceDiagnostics();
-function fullReport(){return diagnostics.report()+'\n\n'+(serverChecks?.report()||'Серверы ещё не проверены')+'\n\nДиагностический STT без игровых действий\n'+testDiagnostics.report();}
+let languageAbort,languageSequence=0,pendingClarification=null;
+const languageJournal=new LanguageJournal(()=>updateReports());
+const languageService=new LanguageService({endpoint:()=>{const id=registry.selected,row=serverChecks?.rows.get(id);if(row?.llmEnabled===false||!registry.available(id))return null;return registry.endpoint(id,'health',{local:true}).startsWith('/')?'/interpret':registry.get(id).url+'/interpret';}});
+function fullReport(){return diagnostics.report()+'\n\n'+(serverChecks?.report()||'Серверы ещё не проверены')+'\n\nДиагностический STT без игровых действий\n'+testDiagnostics.report()+'\n\n'+languageJournal.report();}
 function updateReports(){$('#voice-report').value=fullReport();}
 const diagnostics=new VoiceDiagnostics();
 diagnostics.onChange=updateReports;testDiagnostics.onChange=updateReports;updateReports();
@@ -120,11 +126,12 @@ speech=new BrowserSpeech({
   },
   onFinal:async text=>{
     const voiceSession=speech.session;
-    const command=selectedCommand(text,true);diagnose(text,command,'Groq');$('#command').value=text;
+    const current=revision;$('#command').value=text;const resolved=await resolveLanguage(text,true,speech.session?.abort.signal);if(!resolved||speech.session!==voiceSession||revision!==current)return;const {command,record}=resolved;diagnose(text,command,'Groq');
     diagnostics.update({transcript:text,action:command.ok?describeAction(command):'не определено'});
-    if(!command.ok){await execute(command);if(speech.session!==voiceSession)return;diagnostics.update({result:'Команда не определена'});return {error:'unknown-command'};}
-    speech.stage('executing');const result=await execute(command),results=Array.isArray(result)?result:[result],failure=results.find(r=>r?.cancelled||r?.type==='error'||r?.type==='queue');
-    if(speech.session!==voiceSession)return;
+    if(!command.ok){feedback(command.message,'error');diagnostics.update({result:command.message});return {ok:true,message:command.message};}
+    speech.stage('executing');const actionStarted=performance.now();const result=await execute(command),results=Array.isArray(result)?result:[result],failure=results.find(r=>r?.cancelled||r?.type==='error'||r?.type==='queue');
+    if(speech.session!==voiceSession){if(record)languageJournal.finish(record,'cancelled',performance.now()-actionStarted);return;}
+    if(record)languageJournal.finish(record,failure?'rejected':'executed',performance.now()-actionStarted);
     diagnostics.update({result:failure?.message||(failure?.cancelled?'Действие отменено':results.map(r=>r?.message).filter(Boolean).join(' · ')||'Выполнено')});
     return failure?{error:'game-error'}:{ok:true,message:diagnostics.data.result};
   },
@@ -136,14 +143,15 @@ speech=new BrowserSpeech({
   onEnd:()=>{speechPhase='idle';refresh();},
 },{provider:new FailoverSttProvider(health)});
 $('#hero-name').value=world.profile.name;
-$('#hero-name').addEventListener('input',event=>{world.setName(event.target.value);});
+$('#hero-name').addEventListener('input',event=>{cancelLanguage();world.setName(event.target.value);});
 function diagnose(raw,command,source){
   if(new URLSearchParams(location.search).get('debug')==='1')console.info('[Korean Stickman interpretation]',{source,raw,accepted:command.ok,intents:command.intents||[],reason:command.reason||command.type||'unknown'});
 }
 function selectedCommand(text,voice=false){return $('#stt-language').value==='ru'?interpretRussian(text,{home:mode==='home',profile:world.profile,voice}):mode==='home'?parseRoom(text,{debug:!voice&&roomRenderer.debug}):voice?interpretSpeech([{text}],world.profile):parseKorean(text,world.profile);}
 function describeAction(command){const list=command.commands||[command];return list.map(c=>c.item?`${c.action} ${c.item}`:c.field?`${c.action} ${c.field}=${c.value}`:c.action||c.reason||'unknown').join(' → ');}
-$('#command-form').onsubmit=event=>{event.preventDefault();if(!speech.active&&!testSpeech?.active){const raw=$('#command').value,command=selectedCommand(raw);diagnose(raw,command,'manual');execute(command);}};
-function beginVoice(){retryingConnection=false;voiceError=false;diagnostics.begin(speech.language);diagnostics.update({serverId:registry.selected,serverName:registry.get(registry.selected)?.label,serverUrl:registry.address(registry.selected,{local:true}),testMode:health.mode==='auto'?'автоматически':'вручную'});speech.start();}
+$('#command-form').onsubmit=async event=>{event.preventDefault();if(speech.active||testSpeech?.active)return;const raw=$('#command').value,resolved=await resolveLanguage(raw,false);if(!resolved)return;const {command,record}=resolved;if(!command.ok){feedback(command.message,'error');return;}const started=performance.now(),outcome=await execute(command);if(record)languageJournal.finish(record,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);};
+
+function beginVoice(){cancelLanguage();retryingConnection=false;voiceError=false;diagnostics.begin(speech.language);diagnostics.update({serverId:registry.selected,serverName:registry.get(registry.selected)?.label,serverUrl:registry.address(registry.selected,{local:true}),testMode:health.mode==='auto'?'автоматически':'вручную'});speech.start();}
 $('#mic').onclick=()=>{if(speech.recording)speech.stop();else if(!speech.active&&health.ready)beginVoice();refresh();};
 $('#record-again').onclick=()=>{if(speech.active||testSpeech.active||!health.ready)return;speech.cancel();beginVoice();};
 
@@ -153,17 +161,18 @@ $('#stt-language').onchange=event=>{if(speech.setLanguage(event.target.value)){i
 $('#copy-voice-report').onclick=async()=>{try{await navigator.clipboard.writeText(fullReport());$('#copy-report-status').textContent='Отчёт скопирован';}catch{$('#voice-report').focus();$('#voice-report').select();$('#copy-report-status').textContent='Выделено: скопируйте текст вручную';}};
 window.addEventListener('beforeunload',event=>{if(speech?.recording||speech?.pending||testSpeech?.recording||testSpeech?.pending||testSpeech?.comparison){event.preventDefault();event.returnValue='';}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')health.checkAfterIdle();});
-$('#cancel-recording').onclick=()=>{speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
-$('#repeat').onclick=()=>{if(last)execute(last);};
-$('#reset').onclick=()=>{
+$('#cancel-recording').onclick=()=>{cancelLanguage();speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
+$('#repeat').onclick=()=>{cancelLanguage();if(last)execute(last);};
+$('#reset').onclick=()=>{cancelLanguage();
   if(mode==='home'){revision++;speech.cancel();testSpeech.cancel();roomController.reset();last=null;voiceError=false;$('#command').value='';$('#transcript').textContent='…';feedback('Комната снова пустая. Герой сохранил свои характеристики.');refresh();return;}
   revision++;speech.cancel();testSpeech.cancel();controller.reset();last=null;voiceError=false;$('#hero-name').value='';$('#command').value='';$('#transcript').textContent='…';
   changeLevel(false);feedback('Новая история начинается с приветствия. 안녕하세요!');refresh();
 };
 function changeLevel(home){
+  cancelLanguage();
   revision++;speech.cancel();if(testSpeech?.active)testSpeech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V2.9':'Korean Stickman — Создай своего героя · V2.9';
+  document.title=home?'Korean Stickman — Мой дом · V3.0':'Korean Stickman — Создай своего героя · V3.0';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
@@ -228,3 +237,30 @@ function renderServerPanel(){
  $('#test-server-address').textContent=registry.available(selected)?registry.get(selected).url+'/transcribe':'Не настроен: аудио не отправляется';
  const d=testDiagnostics.data;$('#test-stt-result').textContent=[d.stage==='completed'?'Тест STT завершён':STAGE_LABELS[d.stage]||'Тест ещё не выполнялся',d.serverName,d.mime?`${d.language} · ${d.mime} · ${d.durationMs??'—'} мс · ${d.bytes??'—'} байт`:'',d.httpStatus?`HTTP ${d.httpStatus} · ${d.waitMs??'—'} мс`:'',d.transcript?`Текст: ${d.transcript}`:'',d.error?ERROR_MESSAGES[d.error]||d.error:d.result||'Игровые действия в этом тесте не выполняются.'].filter(Boolean).join('\n');
 }
+
+function languageContext(){return safeContext({level:mode,items:Object.keys(room.items).filter(id=>room.items[id]),held:room.held,posture:room.hero.posture,position:room.hero.position,attributes:world.profile});}
+function cancelLanguage(){languageAbort?.abort();languageSequence++;pendingClarification=null;const box=$('#language-clarification');if(box){box.hidden=true;$('#language-choices').replaceChildren();}}
+async function resolveLanguage(raw,voice,parentSignal){
+ cancelLanguage();const sequence=languageSequence,current=revision,level=mode,context=languageContext(),fingerprint=JSON.stringify(context);const controller=new AbortController();languageAbort=controller;const abort=()=>controller.abort();parentSignal?.addEventListener('abort',abort,{once:true});const signal=controller.signal;
+ try{
+  let result;
+  if($('#stt-language').value==='ru'||(!voice&&roomRenderer.debug&&raw.startsWith('/'))){const command=selectedCommand(raw,voice);return {command,record:null};}
+  result=await languageService.interpret(raw,context,{voice,profile:world.profile,signal});
+  if(sequence!==languageSequence||signal.aborted||parentSignal?.aborted||current!==revision||mode!==level)return null;
+  if(result.usesContext&&JSON.stringify(languageContext())!==fingerprint){feedback('Состояние комнаты изменилось. Повтори фразу.');return null;}
+  result.validation=validateForWorld(result.interpretation,languageContext(),{legacyBatch:result.legacyBatch});result.command=result.validation.ok?engineCommand(result.interpretation,raw):null;
+  result.timing.sttMs=voice?Number(diagnostics.data.totalWaitMs??diagnostics.data.waitMs??0):0;const record=languageJournal.start(result,voice?'voice':'text');$('#language-last').textContent=JSON.stringify({raw:result.raw,local:result.local,features:result.features,method:result.method,llmCalled:result.llmCalled,llmError:result.llmError,intent:result.interpretation,hint:result.hint,validation:result.validation,timing:result.timing},null,2);
+  if(!result.command){if(result.interpretation.status==='clarify'&&result.candidates.length)showClarification(result,record,sequence);return {command:{ok:false,message:languageMessage(result),heard:raw},record};}
+  return {command:result.command,record};
+ }catch(error){if(error.name==='AbortError')return null;feedback('Не удалось разобрать фразу. Знакомые короткие команды продолжают работать.','error');return null;}
+ finally{parentSignal?.removeEventListener('abort',abort);}
+}
+function showClarification(result,record,sequence){
+ pendingClarification={result,record,sequence,revision,mode,fingerprint:JSON.stringify(languageContext())};$('#language-clarification').hidden=false;$('#language-question').textContent=languageMessage(result);
+ result.candidates.slice(0,4).forEach((candidate,index)=>{const button=document.createElement('button');button.type='button';button.textContent=candidate.kind==='create'?'Создать '+(ROOM_ITEMS[candidate.target]||candidate.target):(ROOM_ITEMS[candidate.target]||candidate.action);button.onclick=async()=>{
+  const pending=pendingClarification;if(pending&&pending.fingerprint!==JSON.stringify(languageContext())){cancelLanguage();feedback('Состояние комнаты изменилось. Повтори фразу.');return;}if(!pending||pending.sequence!==languageSequence||pending.revision!==revision||pending.mode!==mode||pending.fingerprint!==JSON.stringify(languageContext())||speech.active||testSpeech.active)return;
+  const accepted=languageService.confirm(result,index,languageContext());cancelLanguage();if(!accepted?.command){feedback(accepted?languageMessage(accepted):'Повтори фразу.','error');return;}
+  const confirmed=languageJournal.start({...accepted,basis:'user-confirmation'},'confirmation'),started=performance.now();const outcome=await execute(accepted.command);languageJournal.finish(confirmed,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);
+ };$('#language-choices').append(button);});
+}
+$('#language-dismiss').onclick=()=>{cancelLanguage();feedback('Ничего не изменено. Можно сказать фразу точнее.');};

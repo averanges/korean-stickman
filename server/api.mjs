@@ -1,9 +1,11 @@
+import {createLanguageEndpoint} from './language-api.mjs';
 import {GroqWhisper,SttError,AUDIO_TYPES} from './stt.mjs';
 import {allowedRequest,SttGate} from './security.mjs';
 import {STT_POLICIES} from '../src/stt-limits.js';
-export const API_VERSION='1',BUILD_VERSION='2.7.0';
-export const API_PATHS=['/health','/transcribe','/api/stt/status','/api/stt'];
-export function createSttApi({platform='render',config,origins=[],frontends=[],gate=new SttGate(),providerFactory=settings=>new GroqWhisper(settings),limits=STT_POLICIES[platform]}={}){
+export const API_VERSION='1',BUILD_VERSION='3.0.0';
+export const API_PATHS=['/health','/transcribe','/api/stt/status','/api/stt','/interpret','/api/interpret'];
+export function createSttApi({platform='render',config,origins=[],frontends=[],gate=new SttGate(),providerFactory=settings=>new GroqWhisper(settings),limits=STT_POLICIES[platform],interpreterFactory,llmGate,llmTimeoutMs}={}){
+ const languageEndpoint=createLanguageEndpoint({config,interpreterFactory,gate:llmGate,timeoutMs:llmTimeoutMs});
  return async({method,path,headers,readBody,signal})=>{
   const h={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
   const respond=(status,data)=>({status,headers:h,body:status===204?null:JSON.stringify({...data,apiVersion:API_VERSION,version:BUILD_VERSION,platform})});
@@ -19,8 +21,9 @@ export function createSttApi({platform='render',config,origins=[],frontends=[],g
     Object.assign(h,{'Access-Control-Allow-Methods':expected+', OPTIONS','Access-Control-Allow-Headers':permitted.join(', '),'Access-Control-Max-Age':'600'});return respond(204,{});
    }
    if(method!==expected){h.Allow=expected+', OPTIONS';return respond(405,{ok:false,error:'method-not-allowed',source:platform});}
-   if(health){const settings=await config();return respond(200,{ok:true,status:'ready',configured:Boolean(settings.key),provider:'Groq Whisper',limits});}
+   if(health){const settings=await config();return respond(200,{ok:true,status:'ready',configured:Boolean(settings.key),provider:'Groq Whisper',limits,capabilities:{interpretation:{version:1,enabled:settings.llmEnabled!==false&&Boolean(settings.llmKey||settings.key)}}});}
    if(headers['x-requested-with']!=='KoreanStickman')return respond(403,{ok:false,error:'forbidden',source:platform});
+   if(path==='/interpret'||path==='/api/interpret')return languageEndpoint({method,path,headers,readBody,signal},respond);
    const language=headers['x-stt-language']||'ko',mime=String(headers['content-type']||'').toLowerCase(),duration=Number(headers['x-audio-duration-ms']);
    if(!['ko','ru'].includes(language))throw new SttError('invalid-language',422);
    if(!AUDIO_TYPES.has(mime.split(';')[0].trim()))throw new SttError('unsupported-format',415);

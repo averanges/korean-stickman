@@ -1,0 +1,833 @@
+[
+  {
+    "category": "A",
+    "level": "home",
+    "text": "책을 읽어요",
+    "status": "resolved",
+    "action": "read",
+    "target": "book"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "물을 마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "우유를 마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "milk"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "사과를 먹어요",
+    "status": "resolved",
+    "action": "eat",
+    "target": "apple"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "침대에서 자요",
+    "status": "resolved",
+    "action": "sleep",
+    "target": "bed"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "의자에 앉아요",
+    "status": "resolved",
+    "action": "sit",
+    "target": "chair"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "일어나요",
+    "status": "resolved",
+    "action": "stand_up",
+    "posture": "sitting"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "공부해요",
+    "status": "resolved",
+    "action": "study"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "배워요",
+    "status": "resolved",
+    "action": "learn"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "일해요",
+    "status": "resolved",
+    "action": "work"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "운동해요",
+    "status": "resolved",
+    "action": "exercise"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "친구를 만나요",
+    "status": "resolved",
+    "action": "meet"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "옷을 사요",
+    "status": "resolved",
+    "action": "shop"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "영화를 봐요",
+    "status": "resolved",
+    "action": "movie"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "숙제를 해요",
+    "status": "resolved",
+    "action": "homework"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "전등을 켜요",
+    "status": "resolved",
+    "action": "on",
+    "target": "lamp"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "전등을 꺼요",
+    "status": "resolved",
+    "action": "off",
+    "target": "lamp"
+  },
+  {
+    "category": "A",
+    "level": "home",
+    "text": "휴대폰을 봐요",
+    "status": "resolved",
+    "action": "screen",
+    "target": "phone"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "책 읽어요",
+    "status": "resolved",
+    "action": "read",
+    "target": "book"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "물 마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "의자 앉아요",
+    "status": "resolved",
+    "action": "sit",
+    "target": "chair"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "침대 있어요",
+    "status": "resolved",
+    "action": "create",
+    "target": "bed"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "공책 있어요",
+    "status": "resolved",
+    "action": "create",
+    "target": "notebook"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "펜 있어요",
+    "status": "resolved",
+    "action": "create",
+    "target": "pen"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "컴퓨터 있어요",
+    "status": "resolved",
+    "action": "create",
+    "target": "computer"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "텔레비전 없어요",
+    "status": "resolved",
+    "action": "remove",
+    "target": "television"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "우유 마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "milk"
+  },
+  {
+    "category": "B",
+    "level": "home",
+    "text": "침대 자요",
+    "status": "resolved",
+    "action": "sleep",
+    "target": "bed"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "물을 마시세요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "물 좀 마셔 주세요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "물 마시다",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "책을 읽어 주세요",
+    "status": "resolved",
+    "action": "read",
+    "target": "book"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "책 읽으세요",
+    "status": "resolved",
+    "action": "read",
+    "target": "book"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "책 읽다",
+    "status": "resolved",
+    "action": "read",
+    "target": "book"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "사과 먹으세요",
+    "status": "resolved",
+    "action": "eat",
+    "target": "apple"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "사과를 먹어 주세요",
+    "status": "resolved",
+    "action": "eat",
+    "target": "apple"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "사과 먹다",
+    "status": "resolved",
+    "action": "eat",
+    "target": "apple"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "의자에 앉으세요",
+    "status": "resolved",
+    "action": "sit",
+    "target": "chair"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "의자 앉아 주세요",
+    "status": "resolved",
+    "action": "sit",
+    "target": "chair"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "침대에서 자세요",
+    "status": "resolved",
+    "action": "sleep",
+    "target": "bed"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "침대에 누우세요",
+    "status": "resolved",
+    "action": "lie_down",
+    "target": "bed"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "공부하세요",
+    "status": "resolved",
+    "action": "study"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "공부해 주세요",
+    "status": "resolved",
+    "action": "study"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "공부하다",
+    "status": "resolved",
+    "action": "study"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "배우세요",
+    "status": "resolved",
+    "action": "learn"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "배워 주세요",
+    "status": "resolved",
+    "action": "learn"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "운동하다",
+    "status": "resolved",
+    "action": "exercise"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "운동해 주세요",
+    "status": "resolved",
+    "action": "exercise"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "일하세요",
+    "status": "resolved",
+    "action": "work"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "친구 만나 주세요",
+    "status": "resolved",
+    "action": "meet"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "영화 봐 주세요",
+    "status": "resolved",
+    "action": "movie"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "옷 사 주세요",
+    "status": "resolved",
+    "action": "shop"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "숙제를 하세요",
+    "status": "resolved",
+    "action": "homework"
+  },
+  {
+    "category": "C",
+    "level": "home",
+    "text": "전등을 꺼 주세요",
+    "status": "resolved",
+    "action": "off",
+    "target": "lamp"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "물을 마시지 마세요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "책을 안 읽어요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "운동하지 마세요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "공부 안 해요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "물을 못 마셔요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "사과를 먹지 않아요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "친구를 만나지 마세요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "영화를 안 봐요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "옷을 사지 마세요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "일하지 않아요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "전등을 켜지 마세요",
+    "status": "blocked"
+  },
+  {
+    "category": "D",
+    "level": "home",
+    "text": "숙제를 안 해요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "물을 마셨어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "책을 읽었어요?",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "물이 어디에 있어요?",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "물을 마셔도 돼요?",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "운동했어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "공부했어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "영화를 봤어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "옷을 샀어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "침대에서 잤어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "의자에 앉았어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "사과를 먹었어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "친구를 만났어요",
+    "status": "blocked"
+  },
+  {
+    "category": "E",
+    "level": "home",
+    "text": "일어나나요?",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 러시아 학생이에요",
+    "status": "resolved",
+    "attributes": {
+      "country": "russia",
+      "profession": "student"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 한국 사람이에요. 선생님이에요",
+    "status": "resolved",
+    "attributes": {
+      "country": "korea",
+      "profession": "teacher"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 러시아 사람이고 학생이에요",
+    "status": "resolved",
+    "attributes": {
+      "country": "russia",
+      "profession": "student"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 한국 사람이고 선생님이에요",
+    "status": "resolved",
+    "attributes": {
+      "country": "korea",
+      "profession": "teacher"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 남자이고 러시아 학생이에요",
+    "status": "resolved",
+    "attributes": {
+      "gender": "male",
+      "country": "russia",
+      "profession": "student"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 캐나다 사람이고 학생이에요",
+    "status": "resolved",
+    "attributes": {
+      "profession": "student"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 러시아 사람이고 개발자예요",
+    "status": "resolved",
+    "attributes": {
+      "country": "russia"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "안녕하세요. 저는 학생입니다",
+    "status": "resolved",
+    "attributes": {
+      "profession": "student"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 여자예요",
+    "status": "resolved",
+    "attributes": {
+      "gender": "female"
+    }
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 한국 사람이 아니에요",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "민수는 학생이에요",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 한국 사람이고 친구는 학생이에요",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 학생이었어요",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 러시아 학생이에요?",
+    "status": "blocked"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 학생이고 의사예요",
+    "status": "clarify"
+  },
+  {
+    "category": "F",
+    "level": "creator",
+    "text": "저는 한국 사람이고 미국 사람이에요",
+    "status": "clarify"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "침대에 있어요",
+    "status": "clarify",
+    "items": []
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "책상에 있어요",
+    "status": "clarify",
+    "items": []
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "의자에 있어요",
+    "status": "clarify",
+    "items": []
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "십대 있어요",
+    "status": "unresolved"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "컴퓨더가 있어요",
+    "status": "unresolved"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "냉장고가 있어요",
+    "status": "unresolved"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "책",
+    "status": "unresolved"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "물을",
+    "status": "unresolved"
+  },
+  {
+    "category": "G",
+    "level": "home",
+    "text": "공부",
+    "status": "unresolved"
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "마셔요",
+    "status": "clarify",
+    "items": [
+      "water",
+      "milk"
+    ]
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "water",
+    "items": [
+      "water"
+    ]
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "마셔요",
+    "status": "resolved",
+    "action": "drink",
+    "target": "milk",
+    "items": [
+      "milk"
+    ]
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "한국어를 배워요",
+    "status": "resolved",
+    "action": "learn"
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "공부를 해요",
+    "status": "resolved",
+    "action": "study"
+  },
+  {
+    "category": "H",
+    "level": "home",
+    "text": "숙제해요",
+    "status": "resolved",
+    "action": "homework"
+  },
+  {
+    "category": "I",
+    "level": "home",
+    "text": "책을 읽고 물을 마셔요",
+    "status": "blocked"
+  },
+  {
+    "category": "I",
+    "level": "home",
+    "text": "책을 안 읽고 물을 마셔요",
+    "status": "blocked"
+  },
+  {
+    "category": "I",
+    "level": "home",
+    "text": "책을 집어서 읽어요",
+    "status": "blocked"
+  },
+  {
+    "category": "I",
+    "level": "home",
+    "text": "공부한 다음에 자요",
+    "status": "blocked"
+  },
+  {
+    "category": "I",
+    "level": "home",
+    "text": "침대에 가서 자세요",
+    "status": "blocked"
+  }
+]

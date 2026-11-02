@@ -33,7 +33,7 @@ export class ServerChecks{
    if(!response.ok)throw Object.assign(Error('http-error'),{code:'http-error',httpStatus:response.status});
    if(data?.ok!==true||typeof data.configured!=='boolean'||data.apiVersion!=='1'||!['render','netlify','vercel'].includes(data.platform)||data.platform!==entry.platform||!/^v?\d+(?:\.\d+){0,3}$/.test(data.apiVersion)||!/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/i.test(data.version))throw Object.assign(Error('invalid-response'),{code:'invalid-response',httpStatus:response.status});
    if(this.registry.get(id).url!==entry.url||!this.registry.available(id)){this.set(id,{state:'not-checked'});return;}
-   this.registry.observe(id,data.limits);this.set(id,{...base,state:'ok',httpStatus:response.status,latencyMs:Math.round(this.now()-start),apiVersion:String(data.apiVersion).slice(0,40),version:String(data.version||'').slice(0,40),platform:String(data.platform).slice(0,40),configured:data.configured});
+   this.registry.observe(id,data.limits);this.set(id,{...base,state:'ok',httpStatus:response.status,latencyMs:Math.round(this.now()-start),apiVersion:String(data.apiVersion).slice(0,40),version:String(data.version||'').slice(0,40),platform:String(data.platform).slice(0,40),configured:data.configured,llmEnabled:data.capabilities?.interpretation?.version===1&&data.capabilities.interpretation.enabled===true});
   }catch(error){if(this.registry.get(id).url===entry.url&&this.registry.available(id))this.set(id,{...base,state:'error',httpStatus:error.httpStatus??this.rows.get(id)?.httpStatus??null,latencyMs:Math.round(this.now()-start),error:error.code||'network'});}
   finally{finished=true;clearTimeout(timer);}
  }
