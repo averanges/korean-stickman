@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#fffefa"><title>Korean Stickman — V2.6</title>
+  <meta name="theme-color" content="#fffefa"><title>Korean Stickman — V2.7</title>
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
@@ -46,14 +46,21 @@
         </section>
         <div id="voice-connection" class="voice-connection" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="connection-label">Подключаем голосовое управление…</span><button id="connection-retry" type="button" hidden>Повторить</button></div>
         <div class="voice-area"><button id="mic" class="mic" aria-label="Начать распознавание корейской речи"><svg viewBox="0 0 48 60" aria-hidden="true"><rect x="15" y="3" width="18" height="34" rx="9" fill="currentColor" stroke="none"/><path d="M7 27v3a17 17 0 0 0 34 0v-3M24 47v9M16 56h16" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/></svg><span class="mic-spinner" aria-hidden="true"></span></button><strong id="status" role="status">Готов</strong><span id="speech-help">Нажми, чтобы начать запись</span><button id="retry-audio" type="button" class="cancel-recording" hidden>Повторить отправку записи</button><button id="cancel-recording" type="button" class="cancel-recording" hidden>Отменить запись</button></div>
-        <details id="voice-settings" class="voice-settings"><summary>Настройки голоса / тестирование</summary><label for="stt-language">Язык распознавания</label><select id="stt-language"><option value="ko">한국어</option><option value="ru">Русский (тест)</option></select><p>Проверка сервера не проверяет Groq. Отчёт содержит только последний запрос на этом устройстве.</p><textarea id="voice-report" aria-label="Диагностический отчёт голосового запроса" readonly rows="12"></textarea><button id="copy-voice-report" type="button">Скопировать отчёт</button><span id="copy-report-status" role="status"></span></details>
+        <details id="voice-settings" class="voice-settings"><summary>Настройки голоса / тестирование</summary><label for="stt-language">Язык распознавания</label><select id="stt-language"><option value="ko">한국어</option><option value="ru">Русский (тест)</option></select><p>Проверка сервера не проверяет Groq. Отчёт содержит только последний запрос на этом устройстве.</p><section class="stt-servers" aria-labelledby="stt-servers-title"><h3 id="stt-servers-title">Серверы STT</h3>
+<p>Проверка показывает доступность API, а не успешность распознавания. Автоматического переключения серверов нет.</p>
+<button id="check-stt-servers" type="button">Проверить серверы</button><div class="server-table"><table><thead><tr><th>Сервер</th><th>Адрес</th><th>Результат</th><th>Время</th></tr></thead><tbody id="stt-server-rows"></tbody></table></div>
+<label for="voice-server">Сервер обычных голосовых команд</label><select id="voice-server"></select><p id="voice-server-address"></p>
+<details><summary>Адреса серверов</summary><p>Только публичные HTTPS-адреса без пути. Флажок включает сервер. Изменения действуют до перезагрузки.</p><div id="stt-server-addresses"></div><button id="apply-server-addresses" type="button">Применить адреса</button><p id="server-config-status" role="status"></p></details>
+<h4>Тест записи без игровых действий</h4><label for="test-server">Сервер диагностического теста</label><select id="test-server"></select><p id="test-server-address"></p>
+<p>Первое нажатие начинает запись, второе отправляет её выбранному серверу. Паузы сохраняются. Аудио хранится только в памяти вкладки; отправка той же записи другому серверу — отдельной кнопкой.</p>
+<div class="test-stt-buttons"><button id="test-mic" type="button">Записать тестовую фразу</button><button id="test-resend" type="button">Отправить ту же запись выбранному серверу</button><button id="test-discard" type="button">Удалить / отменить запись</button></div><pre id="test-stt-result" role="status"></pre></section><textarea id="voice-report" aria-label="Диагностический отчёт голосового запроса" readonly rows="12"></textarea><button id="copy-voice-report" type="button">Скопировать отчёт</button><span id="copy-report-status" role="status"></span></details>
         <div class="heard-line"><span>Я СЛЫШУ</span><p id="transcript" lang="ko">…</p><button id="repeat" aria-label="Повторить последнюю команду" title="Повторить последнюю команду" disabled>↻</button></div>
         <p id="feedback" role="status">Начни с приветствия. Или сразу расскажи о герое!</p>
         <form id="command-form"><label class="sr-only" for="command">Фраза на корейском</label><input id="command" placeholder="Или напиши: 학생이에요" autocomplete="off" maxlength="150"><button id="submit" type="submit" aria-label="Выполнить фразу" title="Выполнить фразу">↗</button></form>
         <button id="enter-world" class="world-button">В мир <span>→</span></button><p class="optional-note">Можно отправиться даже с пустой анкетой</p>
       </aside>
     </div>
-    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V2.6 · Голос и диагностика</span></footer>
+    <footer><span><b>말해 보세요.</b> Попробуй сказать — и посмотри, что произойдёт.</span><span>V2.7 · Серверы STT</span></footer>
   </main>
   <script type="module" src="src/main.js"></script>
 </body>

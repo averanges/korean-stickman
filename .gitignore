@@ -28,3 +28,7 @@ archive/
 secrets/
 *.p12
 *.pfx
+
+backend-public/
+.netlify/
+.vercel/

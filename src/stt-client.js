@@ -2,10 +2,11 @@ import {apiUrl} from './api-config.js';
 export class SpeechError extends Error {
   constructor(code,details={}){super(code);this.code=code;Object.assign(this,details);}
 }
-const known=new Set(['unsupported-format','invalid-language','not-configured','empty-audio','too-short','too-large','unclear','provider-auth','provider-error','rate-limit','timeout','network','server-error']);
+const known=new Set(['unsupported-format','invalid-language','not-configured','empty-audio','too-short','too-large','unclear','provider-auth','provider-error','rate-limit','timeout','network','server-error','too-long','invalid-response']);
 function resultOf(status,data){
-  if(status<200||status>=300){const code=known.has(data?.error)?data.error:'service-unavailable';throw new SpeechError(code,{httpStatus:status,source:['Groq','Render'].includes(data?.source)?data.source:code.startsWith('provider-')||['unclear','rate-limit'].includes(code)?'STT/Groq':'Render',stage:'processing'});}
-  if(typeof data?.text!=='string'||!data.text.trim())throw new SpeechError('unclear',{httpStatus:status,source:'STT/Groq',stage:'processing'});
+  if(status<200||status>=300){const code=status===413?(data?.error==='too-long'?'too-long':'too-large'):status===504&& !data?.error?'timeout':known.has(data?.error)?data.error:'service-unavailable';throw new SpeechError(code,{httpStatus:status,source:['Groq','Render','Netlify','Vercel','render','netlify','vercel'].includes(data?.source)?data.source:code.startsWith('provider-')||['unclear','rate-limit'].includes(code)?'STT/Groq':'Render',stage:'processing'});}
+  if(typeof data?.text!=='string')throw new SpeechError('invalid-response',{httpStatus:status,source:'platform',stage:'processing'});
+  if(!data.text.trim())throw new SpeechError('unclear',{httpStatus:status,source:'STT/Groq',stage:'processing'});
   return {text:data.text};
 }
 // Real browser uses upload completion from XHR; injected fetch remains available for tests/fallback.
@@ -25,7 +26,7 @@ export class HttpSttProvider {
       onStage('uploading',{sent:true,transport:'fetch'});
       const response=await fetcher(endpoint,{method:'POST',credentials:'omit',headers,body:audio,signal:controller.signal});
       onStage('processing',{httpStatus:response.status,waitMs:Math.round(performance.now()-started)});
-      let data;try{data=await response.json();}catch(error){if(error.name==='AbortError')throw error;throw new SpeechError('service-unavailable',{httpStatus:response.status,source:'Render'});}
+      let data;try{data=await response.json();}catch(error){if(error.name==='AbortError')throw error;throw new SpeechError(response.status===413?'too-large':response.status===504?'timeout':response.status>=500?'service-unavailable':'invalid-response',{httpStatus:response.status,source:'platform'});}
       return resultOf(response.status,data);
     }catch(error){if(timedOut)throw new SpeechError('timeout',{stage:'processing'});if(error.name==='AbortError'||error instanceof SpeechError)throw error;throw new SpeechError('network',{stage:'uploading'});}
     finally{onStage('timing',{waitMs:Math.round(performance.now()-started)});clearTimeout(timer);signal?.removeEventListener('abort',abort);}
@@ -37,7 +38,7 @@ export class HttpSttProvider {
     request.open('POST',endpoint);request.timeout=this.timeoutMs;request.withCredentials=false;
     for(const [name,value] of Object.entries(headers))request.setRequestHeader(name,value);
     request.upload.onload=()=>{uploaded=true;onStage('processing',{});};
-    request.onload=()=>{onStage('processing',{httpStatus:request.status});let data;try{data=JSON.parse(request.responseText);}catch{return finish(new SpeechError('service-unavailable',{httpStatus:request.status,source:'Render',stage:'processing'}));}try{finish(null,resultOf(request.status,data));}catch(error){finish(error);}};
+    request.onload=()=>{onStage('processing',{httpStatus:request.status});let data;try{data=JSON.parse(request.responseText);}catch{return finish(new SpeechError(request.status===413?'too-large':request.status===504?'timeout':request.status>=500?'service-unavailable':'invalid-response',{httpStatus:request.status,source:'platform',stage:'processing'}));}try{finish(null,resultOf(request.status,data));}catch(error){finish(error);}};
     request.onerror=()=>finish(new SpeechError(uploaded?'server-unavailable':'upload-failed',{stage:uploaded?'processing':'uploading',source:'network/Render'}));
     request.ontimeout=()=>finish(new SpeechError('timeout',{stage:uploaded?'processing':'uploading'}));
     request.onabort=()=>finish(new DOMException('Cancelled','AbortError'));

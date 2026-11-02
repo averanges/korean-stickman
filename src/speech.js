@@ -4,16 +4,16 @@ export function selectAudioType(Recorder){return RECORDING_TYPES.find(type=>Reco
 const MAX_BYTES=20*1024*1024;
 // Manual recording: silence never stops, sends, truncates or restarts capture.
 export class BrowserSpeech {
-  constructor(callbacks,{navigator=globalThis.navigator,Recorder=globalThis.MediaRecorder,AudioContext=globalThis.AudioContext||globalThis.webkitAudioContext,provider=new HttpSttProvider(),now=()=>performance.now(),schedule=(fn,ms)=>globalThis.setInterval(fn,ms),unschedule=id=>globalThis.clearInterval(id)}={}){
+  constructor(callbacks,{navigator=globalThis.navigator,Recorder=globalThis.MediaRecorder,AudioContext=globalThis.AudioContext||globalThis.webkitAudioContext,provider=new HttpSttProvider(),now=()=>performance.now(),schedule=(fn,ms)=>globalThis.setInterval(fn,ms),unschedule=id=>globalThis.clearInterval(id),retainAudio=false}={}){
     this.callbacks=callbacks;this.navigator=navigator;this.Recorder=Recorder;this.AudioContext=AudioContext;this.provider=provider;
-    this.now=now;this.schedule=schedule;this.unschedule=unschedule;this.state='idle';this.session=null;this.pending=null;this.language='ko';this.stageName='idle';
+    this.retainAudio=retainAudio;this.comparison=null;this.now=now;this.schedule=schedule;this.unschedule=unschedule;this.state='idle';this.session=null;this.pending=null;this.language='ko';this.stageName='idle';
     this.mime=Recorder?.isTypeSupported?selectAudioType(Recorder):null;
     this.supported=Boolean(navigator?.mediaDevices?.getUserMedia&&Recorder&&AudioContext&&this.mime);
   }
   get active(){return ['requesting','recording','stopping','processing','executing'].includes(this.state);}
   get recording(){return this.state==='recording';}
   get cancellable(){return this.active;}
-  stage(name,details={}){if(name!=='timing')this.stageName=name;this.callbacks.onStage?.(name,details);}
+  stage(name,details={}){if(!['timing','routing'].includes(name))this.stageName=name;this.callbacks.onStage?.(name,details);}
   status(state,details={}){this.state=state;if(state==='requesting')this.stage('requesting_microphone',{permission:'запрошен',language:this.language});if(state==='recording')this.stage('recording',{permission:'разрешён',...details});this.callbacks.onStatus?.(state,details);}
   setLanguage(language){if(this.active||this.pending||!['ko','ru'].includes(language))return false;this.language=language;return true;}
   current(session){return this.session===session;}
@@ -30,7 +30,7 @@ export class BrowserSpeech {
   }
   async start(){
     if(!this.supported||this.active)return;
-    this.pending=null;
+    this.pending=null;this.comparison=null;
     const session={language:this.language,chunks:[],bytes:0,voicedMs:0,manual:false,abort:new AbortController()};
     this.session=session;this.status('requesting');
     try{
@@ -95,20 +95,21 @@ export class BrowserSpeech {
       await this.callbacks.beforeUpload?.();if(!this.current(session))return;
       const result=await this.provider.transcribe(pending.audio,{durationMs:pending.durationMs,language:pending.language,signal:session.abort.signal,onStage:(name,details)=>{if(this.current(session))this.stage(name,details);}});
       if(!this.current(session))return;
-      this.pending=null;this.stage('transcribed',{transcript:result.text});this.state='executing';
+      if(this.retainAudio)this.comparison=pending;this.pending=null;this.stage('transcribed',{transcript:result.text});this.state='executing';
       const executed=await this.callbacks.onFinal?.(result.text);
       if(!this.current(session))return;
       if(executed?.error)throw new SpeechError(executed.error,{stage:executed.error==='unknown-command'?'transcribed':'executing'});
       this.session=null;this.state='idle';this.stage('completed',{result:executed?.message||'Выполнено'});this.callbacks.onEnd?.();
     }catch(error){if(this.current(session))this.fail(session,error.name==='AbortError'?'interrupted':error.code||(this.state==='executing'?'game-error':'network'),error);}
   }
+  async compare(){if(this.active||!this.comparison)return;this.pending=this.comparison;this.stage('audio_ready',{language:this.pending.language,durationMs:this.pending.durationMs,bytes:this.pending.audio.size,mime:this.pending.audio.type});return this.retry();}
   async retry(){
     if(this.active||!this.pending)return;const pending=this.pending;
     const session={chunks:[],abort:new AbortController(),language:pending.language};this.session=session;
     await this.submit(session,pending);
   }
   cancel(){
-    const session=this.session,hadAudio=Boolean(session||this.pending);this.session=null;this.pending=null;
+    const session=this.session,hadAudio=Boolean(session||this.pending||this.comparison);this.session=null;this.pending=null;this.comparison=null;
     if(session){session.abort.abort();this.release(session);}
     if(hadAudio)this.stage('cancelled',{result:'Отменено пользователем',error:'cancelled',failureStage:null});this.status('idle');this.callbacks.onEnd?.();
   }
