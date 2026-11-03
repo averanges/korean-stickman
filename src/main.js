@@ -1,3 +1,4 @@
+import {SttExperiment} from './stt-experiment.js';
 import {LanguageService,languageMessage} from './language-service.js';
 import {LanguageJournal} from './language-journal.js';
 import {safeContext,validateForWorld,engineCommand} from './language-contract.js';
@@ -28,14 +29,15 @@ let controller, speech, last=null, revision=0, voiceError=false, speechPhase='id
 let recordedMs=0,voiceStage='idle',testSpeech,serverChecks,retryingConnection=false;
 const registry=new SttServers();
 const testDiagnostics=new VoiceDiagnostics();
+const sttExperiment=new SttExperiment({endpoint:()=>registry.available('vercel')?registry.get('vercel').url+'/api/stt-experiment':null,onChange:()=>{updateReports();refresh();}});
 let languageAbort,languageSequence=0,pendingClarification=null;
 const languageJournal=new LanguageJournal(()=>updateReports());
 const languageService=new LanguageService({endpoint:()=>{const id=registry.selected,row=serverChecks?.rows.get(id);if(row?.llmEnabled===false||!registry.available(id))return null;return registry.endpoint(id,'health',{local:true}).startsWith('/')?'/interpret':registry.get(id).url+'/interpret';}});
-function fullReport(){return diagnostics.report()+'\n\n'+(serverChecks?.report()||'Серверы ещё не проверены')+'\n\nДиагностический STT без игровых действий\n'+testDiagnostics.report()+'\n\n'+languageJournal.report();}
+function fullReport(){return diagnostics.report()+'\n\n'+(serverChecks?.report()||'Серверы ещё не проверены')+'\n\nДиагностический STT без игровых действий\n'+testDiagnostics.report()+'\n\n'+languageJournal.report()+'\n\n'+sttExperiment.report();}
 function updateReports(){$('#voice-report').value=fullReport();}
 const diagnostics=new VoiceDiagnostics();
 diagnostics.onChange=updateReports;testDiagnostics.onChange=updateReports;updateReports();
-const health=new SttConnection(registry,{isBusy:()=>Boolean(speech?.active||testSpeech?.active||(mode==='home'?roomController.busy:world.busy)),onChange:connection=>{
+const health=new SttConnection(registry,{isBusy:()=>Boolean(speech?.active||testSpeech?.active||sttExperiment.running||(mode==='home'?roomController.busy:world.busy)),onChange:connection=>{
  const id=registry.selected,r=connection.checks.rows.get(id)||{};
  diagnostics.update({activeServer:id,serverState:connection.state,serverHttp:r.httpStatus,serverError:connection.error});updateReports();refresh();
 }});
@@ -50,7 +52,7 @@ function refresh(){
     node.classList.toggle('empty',!profile[field]);
   }
   const activeController=mode==='home'?roomController:controller;
-  const testBusy=Boolean(testSpeech?.active);
+  const testBusy=Boolean(testSpeech?.active||sttExperiment.running);
   const listening=speech?.recording||false,voiceBusy=speech?.active||false,busy=mode==='home'?roomController.busy:world.busy;
   const processing=['stopping','processing','executing'].includes(speechPhase);
   $('#mic').disabled=!speech?.supported||testBusy||Boolean(speech?.active&&!listening)||(!listening&&(!health.ready||Boolean(speech?.pending)));
@@ -58,7 +60,7 @@ function refresh(){
   $('#mic').setAttribute('aria-label',listening?'Завершить запись и распознать':speech?.language==='ru'?'Начать запись речи на русском':'Начать запись корейской речи');
   $('#mic').setAttribute('aria-pressed',String(listening));
   $('#cancel-recording').hidden=!voiceBusy&&!speech?.pending;$('#cancel-recording').textContent=!voiceBusy&&speech?.pending?'Удалить запись':processing?'Отменить отправку':'Отменить запись';
-  $('#record-again').hidden=!speech?.pending||voiceBusy;$('#record-again').disabled=!health.ready||testBusy;$('#retry-audio').hidden=!speech?.pending||voiceBusy;$('#retry-audio').disabled=!health.ready;$('#stt-language').disabled=voiceBusy||testBusy||Boolean(speech?.pending||testSpeech?.pending||testSpeech?.comparison);
+  $('#record-again').hidden=!speech?.pending||voiceBusy;$('#record-again').disabled=!health.ready||testBusy;$('#retry-audio').hidden=!speech?.pending||voiceBusy;$('#retry-audio').disabled=!health.ready||testBusy;$('#stt-language').disabled=voiceBusy||testBusy||Boolean(speech?.pending||testSpeech?.pending||testSpeech?.comparison);
   $('#voice-connection').dataset.state=health.state;$('#connection-label').textContent=health.state==='connecting'?'Подключаем голосовое управление…':health.state==='ready'?(health.configured?'Сервер готов':'Сервер готов · распознавание не настроено'):health.state==='error'?(ERROR_MESSAGES[health.error]||ERROR_MESSAGES['server-unavailable']):'Подключаем голосовое управление…';
   $('#connection-retry').hidden=health.state!=='error'&&!(health.state==='ready'&&!health.configured);
   $('#transcript').lang=$('#stt-language').value;
@@ -149,7 +151,7 @@ function diagnose(raw,command,source){
 }
 function selectedCommand(text,voice=false){return $('#stt-language').value==='ru'?interpretRussian(text,{home:mode==='home',profile:world.profile,voice}):mode==='home'?parseRoom(text,{debug:!voice&&roomRenderer.debug}):voice?interpretSpeech([{text}],world.profile):parseKorean(text,world.profile);}
 function describeAction(command){const list=command.commands||[command];return list.map(c=>c.item?`${c.action} ${c.item}`:c.field?`${c.action} ${c.field}=${c.value}`:c.action||c.reason||'unknown').join(' → ');}
-$('#command-form').onsubmit=async event=>{event.preventDefault();if(speech.active||testSpeech?.active)return;const raw=$('#command').value,resolved=await resolveLanguage(raw,false);if(!resolved)return;const {command,record}=resolved;if(!command.ok){feedback(command.message,'error');return;}const started=performance.now(),outcome=await execute(command);if(record)languageJournal.finish(record,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);};
+$('#command-form').onsubmit=async event=>{event.preventDefault();if(speech.active||testSpeech?.active||sttExperiment.running)return;const raw=$('#command').value,resolved=await resolveLanguage(raw,false);if(!resolved)return;const {command,record}=resolved;if(!command.ok){feedback(command.message,'error');return;}const started=performance.now(),outcome=await execute(command);if(record)languageJournal.finish(record,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);};
 
 function beginVoice(){cancelLanguage();retryingConnection=false;voiceError=false;diagnostics.begin(speech.language);diagnostics.update({serverId:registry.selected,serverName:registry.get(registry.selected)?.label,serverUrl:registry.address(registry.selected,{local:true}),testMode:health.mode==='auto'?'автоматически':'вручную'});speech.start();}
 $('#mic').onclick=()=>{if(speech.recording)speech.stop();else if(!speech.active&&health.ready)beginVoice();refresh();};
@@ -163,16 +165,16 @@ window.addEventListener('beforeunload',event=>{if(speech?.recording||speech?.pen
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')health.checkAfterIdle();});
 $('#cancel-recording').onclick=()=>{cancelLanguage();speech.cancel();voiceError=false;feedback('Запись отменена. Она не отправлена; герой остаётся прежним.');refresh();};
 $('#repeat').onclick=()=>{cancelLanguage();if(last)execute(last);};
-$('#reset').onclick=()=>{cancelLanguage();
+$('#reset').onclick=()=>{sttExperiment.clear();cancelLanguage();
   if(mode==='home'){revision++;speech.cancel();testSpeech.cancel();roomController.reset();last=null;voiceError=false;$('#command').value='';$('#transcript').textContent='…';feedback('Комната снова пустая. Герой сохранил свои характеристики.');refresh();return;}
   revision++;speech.cancel();testSpeech.cancel();controller.reset();last=null;voiceError=false;$('#hero-name').value='';$('#command').value='';$('#transcript').textContent='…';
   changeLevel(false);feedback('Новая история начинается с приветствия. 안녕하세요!');refresh();
 };
 function changeLevel(home){
-  cancelLanguage();
+  sttExperiment.cancel();cancelLanguage();
   revision++;speech.cancel();if(testSpeech?.active)testSpeech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
   mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
-  document.title=home?'Korean Stickman — Мой дом · V3.0':'Korean Stickman — Создай своего героя · V3.0';
+  document.title=home?'Korean Stickman — Мой дом · V3.0.2':'Korean Stickman — Создай своего героя · V3.0';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
   $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
@@ -207,20 +209,23 @@ function initializeServers(){
  }
  const auto=document.createElement('option');auto.value='auto';auto.textContent='Автоматически';$('#voice-server').prepend(auto);$('#voice-server').value='auto';$('#test-server').value='render';
  serverChecks=health.checks;
- testSpeech=createDiagnosticSpeech({registry,select:()=>$('#test-server').value,diagnostics:testDiagnostics,onChange:()=>refresh()});
+ testSpeech=createDiagnosticSpeech({registry,select:()=>$('#test-server').value,diagnostics:testDiagnostics,captureOnly:()=>$('#experiment-capture-only').checked,onChange:()=>refresh()});
  $('#check-stt-servers').onclick=()=>health.check();
  $('#voice-settings').addEventListener('toggle',()=>{if($('#voice-settings').open&&!serverChecks.rows.size)serverChecks.checkAll();});
  $('#voice-server').onchange=()=>{if(speech.active||speech.pending)return;health.setMode($('#voice-server').value);health.check();refresh();};
  $('#apply-server-addresses').onclick=()=>{try{const changes=registry.entries.map(e=>({id:e.id,url:publicOrigin(document.querySelector(`[data-server-url="${e.id}"]`).value),enabled:document.querySelector(`[data-server-enabled="${e.id}"]`).checked}));for(const e of changes)registry.update(e.id,e);health.check();$('#server-config-status').textContent='Адреса применены до перезагрузки. Запросы STT сами не отправляются.';refresh();}catch{$('#server-config-status').textContent='Нужны публичные HTTPS-адреса без пути, ключей и параметров.';}};
+ $('#experiment-run').onclick=()=>{const clip=testSpeech.pending||testSpeech.comparison;if(clip&&!speech.active&&!testSpeech.active)sttExperiment.run(clip,{reference:$('#experiment-reference').value});};
+ $('#experiment-cancel').onclick=()=>sttExperiment.cancel();
+ $('#experiment-capture-only').onchange=()=>refresh();
  $('#test-server').onchange=()=>renderServerPanel();
- $('#test-mic').onclick=()=>{if(testSpeech.recording)testSpeech.stop();else if(!testSpeech.active&&!speech.active&&!speech.pending&&registry.available($('#test-server').value)){testDiagnostics.begin(speech.language);testDiagnostics.update({serverId:$('#test-server').value,serverName:registry.get($('#test-server').value)?.label,serverUrl:registry.address($('#test-server').value),testMode:'диагностика STT'});testSpeech.setLanguage(speech.language);testSpeech.start();}refresh();};
+ $('#test-mic').onclick=()=>{if(testSpeech.recording)testSpeech.stop();else if(!testSpeech.active&&!speech.active&&!speech.pending&&registry.available($('#test-server').value)){sttExperiment.clear({keepHistory:true});testDiagnostics.begin(speech.language);testDiagnostics.update({serverId:$('#test-server').value,serverName:registry.get($('#test-server').value)?.label,serverUrl:registry.address($('#test-server').value),testMode:'диагностика STT'});testSpeech.setLanguage(speech.language);testSpeech.start();}refresh();};
  $('#test-resend').onclick=()=>{const clip=testSpeech.pending||testSpeech.comparison;if(!clip||testSpeech.active||speech.active||!registry.available($('#test-server').value))return;testDiagnostics.begin(clip.language);testDiagnostics.update({language:clip.language,mime:clip.audio.type,bytes:clip.audio.size,durationMs:clip.durationMs,result:'Явная повторная отправка выбранному серверу'});if(testSpeech.pending)testSpeech.retry();else testSpeech.compare();refresh();};
- $('#test-discard').onclick=()=>{testSpeech.cancel();refresh();};
+ $('#test-discard').onclick=()=>{sttExperiment.clear();testSpeech.cancel();refresh();};
 }
 function renderServerPanel(){
  if(!serverChecks||!testSpeech)return;
- const gameBusy=mode==='home'?roomController.busy:world.busy,blocked=Boolean(speech?.active||testSpeech.active||gameBusy),normalBlocked=blocked||Boolean(speech?.pending)||Boolean(health.pending);
- $('#voice-server').disabled=normalBlocked;$('#test-server').disabled=testSpeech.active;
+ const gameBusy=mode==='home'?roomController.busy:world.busy,blocked=Boolean(speech?.active||testSpeech.active||sttExperiment.running||gameBusy),normalBlocked=blocked||Boolean(speech?.pending)||Boolean(health.pending);
+ $('#voice-server').disabled=normalBlocked;$('#test-server').disabled=testSpeech.active||sttExperiment.running;
  $('#apply-server-addresses').disabled=blocked||Boolean(serverChecks.pending)||Boolean(health.pending);$('#check-stt-servers').disabled=Boolean(serverChecks.pending);
  for(const e of registry.entries){
   const row=document.querySelector(`[data-server="${e.id}"]`),r=serverChecks.rows.get(e.id)||{};
@@ -231,11 +236,12 @@ function renderServerPanel(){
  }
  $('#voice-server-address').textContent=registry.available(registry.selected)?'Активный сервер: '+registry.get(registry.selected).label+' · '+registry.address(registry.selected,{local:true}):'Сервер не настроен или отключён';
  const selected=$('#test-server').value,clip=testSpeech.pending||testSpeech.comparison,recording=testSpeech.recording;
- $('#test-mic').textContent=recording?'Завершить и отправить выбранному серверу':clip?'Записать новую тестовую фразу':'Записать тестовую фразу';
- $('#test-mic').disabled=!testSpeech.supported||(!recording&&gameBusy)||Boolean(speech?.active||speech?.pending)||Boolean(testSpeech.active&&!recording)||Boolean(testSpeech.pending)||!registry.available(selected);
- $('#test-resend').disabled=!clip||blocked||!registry.available(selected);$('#test-discard').disabled=!testSpeech.active&&!clip;
- $('#test-server-address').textContent=registry.available(selected)?registry.get(selected).url+'/transcribe':'Не настроен: аудио не отправляется';
- const d=testDiagnostics.data;$('#test-stt-result').textContent=[d.stage==='completed'?'Тест STT завершён':STAGE_LABELS[d.stage]||'Тест ещё не выполнялся',d.serverName,d.mime?`${d.language} · ${d.mime} · ${d.durationMs??'—'} мс · ${d.bytes??'—'} байт`:'',d.httpStatus?`HTTP ${d.httpStatus} · ${d.waitMs??'—'} мс`:'',d.transcript?`Текст: ${d.transcript}`:'',d.error?ERROR_MESSAGES[d.error]||d.error:d.result||'Игровые действия в этом тесте не выполняются.'].filter(Boolean).join('\n');
+ $('#test-mic').textContent=recording?($('#experiment-capture-only').checked?'Завершить и сохранить запись':'Завершить и отправить выбранному серверу'):clip?'Записать новую тестовую фразу':'Записать тестовую фразу';
+ $('#test-mic').disabled=!testSpeech.supported||(!recording&&gameBusy)||sttExperiment.running||Boolean(speech?.active||speech?.pending)||Boolean(testSpeech.active&&!recording)||Boolean(testSpeech.pending)||!registry.available(selected);
+ $('#test-resend').disabled=!clip||blocked||!registry.available(selected)||$('#experiment-capture-only').checked;$('#test-discard').disabled=!testSpeech.active&&!clip&&!sttExperiment.rows.length;
+ renderExperiment(clip,blocked);
+ $('#test-server-address').textContent=$('#experiment-capture-only').checked?'Аудио сохраняется в памяти без отправки. Сравнение A–D использует Vercel.':registry.available(selected)?registry.get(selected).url+'/transcribe':'Не настроен: аудио не отправляется';
+ const d=testDiagnostics.data;$('#test-stt-result').textContent=[d.stage==='completed'?($('#experiment-capture-only').checked?'Тестовая запись сохранена':'Тест STT завершён'):STAGE_LABELS[d.stage]||'Тест ещё не выполнялся',d.serverName,d.mime?`${d.language} · ${d.mime} · ${d.durationMs??'—'} мс · ${d.bytes??'—'} байт`:'',d.httpStatus?`HTTP ${d.httpStatus} · ${d.waitMs??'—'} мс`:'',d.transcript?`Текст: ${d.transcript}`:'',d.error?ERROR_MESSAGES[d.error]||d.error:d.result||'Игровые действия в этом тесте не выполняются.'].filter(Boolean).join('\n');
 }
 
 function languageContext(){return safeContext({level:mode,items:Object.keys(room.items).filter(id=>room.items[id]),held:room.held,posture:room.hero.posture,position:room.hero.position,attributes:world.profile});}
@@ -264,3 +270,14 @@ function showClarification(result,record,sequence){
  };$('#language-choices').append(button);});
 }
 $('#language-dismiss').onclick=()=>{cancelLanguage();feedback('Ничего не изменено. Можно сказать фразу точнее.');};
+
+function renderExperiment(clip,blocked){
+ const experiment=sttExperiment;
+ $('#experiment-reference').disabled=experiment.running;
+ $('#experiment-capture-only').disabled=Boolean(speech?.active||testSpeech?.active||experiment.running);
+ $('#experiment-run').disabled=blocked||!clip||clip.language!=='ko'||clip.audio.size>4000000||!experiment.endpoint();
+ $('#experiment-cancel').hidden=!experiment.running;$('#experiment-status').textContent=clip?.language&&clip.language!=='ko'?'Для A–D нужна корейская запись; удали текущую и выбери 한국어.':clip?.audio.size>4000000?'Запись больше 4 МБ. Для сравнения запиши более короткую фразу.':experiment.message;
+ $('#experiment-endpoint').textContent=experiment.endpoint()||'Vercel не настроен';
+ const body=$('#experiment-rows');body.replaceChildren();
+ for(const row of experiment.rows){const tr=document.createElement('tr');for(let n=0;n<3;n++)tr.append(document.createElement('td'));tr.children[0].textContent=row.id+'. '+row.label+(row.model?' · '+row.model:'');tr.children[1].textContent=row.state==='ok'?(row.rawText||'(пустой текст)'):({waiting:'Ожидает',running:'Распознаётся…',cancelled:'Отменено',error:'Ошибка'}[row.state]||row.state);tr.children[1].style.whiteSpace='pre-wrap';tr.children[2].textContent=[row.elapsedMs!==undefined?row.elapsedMs+' мс':'',({'openai-not-configured':'В Vercel не настроен ключ OpenAI','experiment-not-deployed':'Обновите backend Vercel для эксперимента','provider-auth':'Провайдер не принял ключ','rate-limit':'Лимит запросов API',timeout:'Тайм-аут'}[row.error]||row.error||''),row.httpStatus?'HTTP '+row.httpStatus:'',row.providerHttpStatus?'API провайдера HTTP '+row.providerHttpStatus:'',row.extraKeywords?.length?'Словарные слова вне эталона: '+row.extraKeywords.join(', '):'',row.quality==='unclear-by-current-guard'?'Текущий фильтр игры счёл бы запись неразборчивой':''].filter(Boolean).join(' · ');body.append(tr);}
+}

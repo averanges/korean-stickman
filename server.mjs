@@ -11,8 +11,8 @@ const projectURL=new URL('.',import.meta.url);
 const root=path.resolve(fileURLToPath(projectURL));
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'};
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
-export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),frontends=configuredFrontends(),apiOnly=process.env.RENDER==='true'||process.env.API_ONLY==='true',gate=new SttGate(),interpreterFactory,llmGate,llmTimeoutMs}={}){
-  const api=createSttApi({platform:'render',config,providerFactory,origins,frontends,gate,interpreterFactory,llmGate,llmTimeoutMs});
+export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),frontends=configuredFrontends(),apiOnly=process.env.RENDER==='true'||process.env.API_ONLY==='true',gate=new SttGate(),interpreterFactory,llmGate,llmTimeoutMs,experimentProviderFactory,experimentGate,experimentTimeoutMs}={}){
+  const api=createSttApi({platform:'render',config,providerFactory,origins,frontends,gate,interpreterFactory,llmGate,llmTimeoutMs,experimentProviderFactory,experimentGate,experimentTimeoutMs});
   return http.createServer(async(req,res)=>{
     try{
       const host=req.headers.host||'';

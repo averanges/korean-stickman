@@ -1,21 +1,24 @@
+import {createSttExperiment} from './stt-experiment.mjs';
 import {createLanguageEndpoint} from './language-api.mjs';
 import {GroqWhisper,SttError,AUDIO_TYPES} from './stt.mjs';
 import {allowedRequest,SttGate} from './security.mjs';
 import {STT_POLICIES} from '../src/stt-limits.js';
-export const API_VERSION='1',BUILD_VERSION='3.0.0';
-export const API_PATHS=['/health','/transcribe','/api/stt/status','/api/stt','/interpret','/api/interpret'];
-export function createSttApi({platform='render',config,origins=[],frontends=[],gate=new SttGate(),providerFactory=settings=>new GroqWhisper(settings),limits=STT_POLICIES[platform],interpreterFactory,llmGate,llmTimeoutMs}={}){
+export const API_VERSION='1',BUILD_VERSION='3.0.2';
+export const API_PATHS=['/health','/transcribe','/api/stt/status','/api/stt','/interpret','/api/interpret','/api/stt-experiment'];
+export function createSttApi({platform='render',config,origins=[],frontends=[],gate=new SttGate(),providerFactory=settings=>new GroqWhisper(settings),limits=STT_POLICIES[platform],interpreterFactory,llmGate,llmTimeoutMs,experimentGate,experimentTimeoutMs,experimentProviderFactory}={}){
+ const experimentEndpoint=createSttExperiment({config,gate:experimentGate,timeoutMs:experimentTimeoutMs,providerFactory:experimentProviderFactory});
  const languageEndpoint=createLanguageEndpoint({config,interpreterFactory,gate:llmGate,timeoutMs:llmTimeoutMs});
  return async({method,path,headers,readBody,signal})=>{
   const h={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
-  const respond=(status,data)=>({status,headers:h,body:status===204?null:JSON.stringify({...data,apiVersion:API_VERSION,version:BUILD_VERSION,platform})});
+  const respond=(status,data,extra={})=>({status,headers:{...h,...extra},body:status===204?null:JSON.stringify({...data,apiVersion:API_VERSION,version:BUILD_VERSION,platform})});
   try{
    if(!allowedRequest({headers},origins,frontends))return respond(403,{ok:false,error:'forbidden',source:platform});
    if(!API_PATHS.includes(path))return respond(404,{ok:false,error:'not-found',source:platform});
    if(headers.origin){h['Access-Control-Allow-Origin']=headers.origin;h.Vary='Origin';h['Access-Control-Expose-Headers']='Retry-After';}
+   const experiment=path==='/api/stt-experiment';if(experiment&&platform!=='vercel'&&!/^(localhost|127\.0\.0\.1)(:\d+)?$/u.test(headers.host||''))return respond(404,{ok:false,error:'not-found',source:platform});
    const health=path==='/health'||path==='/api/stt/status',expected=health?'GET':'POST';
    if(method==='OPTIONS'){
-    const permitted=['content-type','x-requested-with','x-audio-duration-ms','x-stt-language','accept'];
+    const permitted=[...(experiment?['x-stt-experiment']:[]),'content-type','x-requested-with','x-audio-duration-ms','x-stt-language','accept'];
     const requested=String(headers['access-control-request-headers']||'').toLowerCase().split(',').map(v=>v.trim()).filter(Boolean);
     if(!headers.origin||headers['access-control-request-method']!==expected||requested.some(v=>!permitted.includes(v)))return respond(403,{ok:false,error:'forbidden',source:platform});
     Object.assign(h,{'Access-Control-Allow-Methods':expected+', OPTIONS','Access-Control-Allow-Headers':permitted.join(', '),'Access-Control-Max-Age':'600'});return respond(204,{});
@@ -23,6 +26,7 @@ export function createSttApi({platform='render',config,origins=[],frontends=[],g
    if(method!==expected){h.Allow=expected+', OPTIONS';return respond(405,{ok:false,error:'method-not-allowed',source:platform});}
    if(health){const settings=await config();return respond(200,{ok:true,status:'ready',configured:Boolean(settings.key),provider:'Groq Whisper',limits,capabilities:{interpretation:{version:1,enabled:settings.llmEnabled!==false&&Boolean(settings.llmKey||settings.key)}}});}
    if(headers['x-requested-with']!=='KoreanStickman')return respond(403,{ok:false,error:'forbidden',source:platform});
+   if(experiment)return experimentEndpoint({method,path,headers,readBody,signal},respond);
    if(path==='/interpret'||path==='/api/interpret')return languageEndpoint({method,path,headers,readBody,signal},respond);
    const language=headers['x-stt-language']||'ko',mime=String(headers['content-type']||'').toLowerCase(),duration=Number(headers['x-audio-duration-ms']);
    if(!['ko','ru'].includes(language))throw new SttError('invalid-language',422);

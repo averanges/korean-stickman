@@ -1,0 +1,110 @@
+{
+  "version": "3.0.2",
+  "language": "ko",
+  "variants": [
+    "A",
+    "B",
+    "C",
+    "D"
+  ],
+  "samples": [
+    {
+      "category": "target",
+      "spokenReference": "공책이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "target",
+      "spokenReference": "옷을 사요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "target",
+      "spokenReference": "영화를 봐요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "target",
+      "spokenReference": "펜이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "control",
+      "spokenReference": "안녕하세요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "control",
+      "spokenReference": "책이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "control",
+      "spokenReference": "물을 마셔요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "control",
+      "spokenReference": "의자에 앉아요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "negative",
+      "spokenReference": "공책이 없어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "negative",
+      "spokenReference": "옷을 사지 마세요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "negative",
+      "spokenReference": "영화를 안 봐요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "negative",
+      "spokenReference": "펜이 아니에요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "nearby-unknown",
+      "spokenReference": "꽃이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "nearby-unknown",
+      "spokenReference": "병이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "nearby-unknown",
+      "spokenReference": "공이 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    },
+    {
+      "category": "nearby-unknown",
+      "spokenReference": "냉장고 있어요",
+      "recordingsProvided": false,
+      "review": "Compare raw transcription, preserve negation, do not insert unspoken glossary words."
+    }
+  ],
+  "suggestedPlan": "Two speakers; two independent takes for target phrases; one take for each other phrase. Same recording in all four variants.",
+  "audioFilesIncluded": false
+}
