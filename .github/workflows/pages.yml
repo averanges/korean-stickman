@@ -22,6 +22,7 @@ jobs:
           API_BASE_URL: ${{ vars.API_BASE_URL || 'https://korean-stickman.onrender.com' }}
           NETLIFY_API_BASE_URL: ${{ vars.NETLIFY_API_BASE_URL || 'https://incandescent-lollipop-01828a.netlify.app' }}
           VERCEL_API_BASE_URL: ${{ vars.VERCEL_API_BASE_URL || 'https://korean-stickman.vercel.app' }}
+          AMVERA_API_BASE_URL: ${{ vars.AMVERA_API_BASE_URL || 'https://korean-stickman-averanges.msk1.amvera.tech' }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

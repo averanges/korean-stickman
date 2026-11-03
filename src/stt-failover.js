@@ -10,7 +10,7 @@ export function shouldFailover(error){
 export class FailoverSttProvider{
  constructor(connection,{fetcher,timeoutMs=30000,providerFactory}={}){Object.assign(this,{connection,fetcher,timeoutMs,providerFactory});this.recordings=new WeakMap();}
  async transcribe(audio,options){
-  const {registry}=this.connection,automatic=this.connection.mode==='auto',first=registry.selected,ids=automatic?[first,...SERVER_ORDER.filter(id=>id!==first)]:[this.connection.mode];
+  const {registry}=this.connection,automatic=this.connection.mode==='auto',first=automatic&&!SERVER_ORDER.includes(registry.selected)?SERVER_ORDER[0]:registry.selected,ids=automatic?[first,...SERVER_ORDER.filter(id=>id!==first)]:[this.connection.mode];
   const firstLimits=registry.limits(first);if(audio.size>firstLimits.maxAudioBytes)throw new SpeechError('too-large');if(firstLimits.maxDurationMs&&options.durationMs>firstLimits.maxDurationMs)throw new SpeechError('too-long');
   const budget=this.recordings.get(audio)||{used:0};this.recordings.set(audio,budget);
   const operationStarted=performance.now(),attempts=[],skipped=[];let lastError,reason=null;
@@ -26,7 +26,7 @@ export class FailoverSttProvider{
    if(attempt>1)options.onStage?.('switching',detail());options.onStage?.('routing',detail());
    const row={server:id,attempt,status:'pending'};attempts.push(row);
    try{
-    const provider=this.providerFactory?this.providerFactory(id):new RoutedSttProvider(registry,()=>id,{local:true,fetcher:this.fetcher,timeoutMs:this.timeoutMs,strict:true});
+    const provider=this.providerFactory?this.providerFactory(id):new RoutedSttProvider(registry,()=>id,{local:true,fetcher:this.fetcher,timeoutMs:id==='amvera'?registry.limits(id).timeoutMs:this.timeoutMs,strict:true});
     const result=await provider.transcribe(audio,{...options,onStage});
     if(options.signal?.aborted)throw new DOMException('Cancelled','AbortError');
     row.status='ok';row.waitMs=Math.round(performance.now()-started);finished=true;this.connection.success(id);options.onStage?.('routing',detail());return result;

@@ -2,9 +2,9 @@ import {apiUrl} from './api-config.js';
 export class SpeechError extends Error {
   constructor(code,details={}){super(code);this.code=code;Object.assign(this,details);}
 }
-const known=new Set(['unsupported-format','invalid-language','not-configured','empty-audio','too-short','too-large','unclear','provider-auth','provider-error','rate-limit','timeout','network','server-error','too-long','invalid-response']);
+const known=new Set(['upstream-network','upstream-invalid-response','busy','invalid-duration','request-aborted','upload-error','forbidden-origin','forbidden','unsupported-format','invalid-language','not-configured','empty-audio','too-short','too-large','unclear','provider-auth','provider-error','rate-limit','timeout','network','server-error','too-long','invalid-response']);
 function resultOf(status,data,strict=false){
-  if(status<200||status>=300){const code=status===413?(data?.error==='too-long'?'too-long':'too-large'):status===504&& !data?.error?'timeout':known.has(data?.error)?data.error:'service-unavailable';throw new SpeechError(code,{httpStatus:status,source:['Groq','Render','Netlify','Vercel','render','netlify','vercel'].includes(data?.source)?data.source:code.startsWith('provider-')||['unclear','rate-limit'].includes(code)?'STT/Groq':'Render',stage:'processing'});}
+  if(status<200||status>=300){const code=status===413?(data?.error==='too-long'?'too-long':'too-large'):status===504&& !data?.error?'timeout':known.has(data?.error)?data.error:'service-unavailable';throw new SpeechError(code,{httpStatus:status,source:['Groq','Render','Netlify','Vercel','render','netlify','vercel','amvera-proxy'].includes(data?.source)?data.source:code.startsWith('provider-')||['unclear','rate-limit'].includes(code)?'STT/Groq':'Render',stage:'processing'});}
   if(strict&&(data?.ok!==true||data.apiVersion!=='1'||!['render','vercel','netlify'].includes(data.platform)))throw new SpeechError('invalid-response',{httpStatus:status,stage:'processing'});
   if(typeof data?.text!=='string')throw new SpeechError('invalid-response',{httpStatus:status,source:'platform',stage:'processing'});
   if(!data.text.trim())throw new SpeechError('unclear',{httpStatus:status,source:'STT/Groq',stage:'processing'});

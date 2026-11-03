@@ -11,8 +11,8 @@ export class SttConnection{
  get ready(){return this.state==='ready'&&this.configured&&this.registry.available(this.registry.selected);}
  change(state,error=null){this.state=state;this.error=error;this.configured=state==='ready';this.onChange(this);}
  usable(id){const r=this.checks.rows.get(id);return this.registry.available(id)&&r?.state==='ok'&&r.configured===true&&r.apiVersion==='1';}
- success(id){this.registry.select(id);this.lastSuccess=id;try{this.storage?.setItem(STORAGE_KEY,id);}catch{}this.change('ready');}
- setMode(mode){if(this.isBusy())return false;if(mode!=='auto'&&!this.registry.available(mode))return false;this.mode=mode;return true;}
+ success(id){this.registry.select(id);if(SERVER_ORDER.includes(id)){this.lastSuccess=id;try{this.storage?.setItem(STORAGE_KEY,id);}catch{}}this.change('ready');}
+ setMode(mode){if(this.isBusy())return false;if(mode!=='auto'&&!this.registry.available(mode))return false;this.mode=mode;this.deferred=null;return true;}
  check(){if(this.pending)return this.pending;if(this.isBusy())return Promise.resolve(this.ready);this.pending=this.run().finally(()=>{this.pending=null;this.onChange(this);});return this.pending;}
  async run(){
   this.change('connecting');if(!this.checks.pending)this.checks.rows.clear();let windowPassed=false,settled=false,timer,deadline;
@@ -25,13 +25,13 @@ export class SttConnection{
     const render=this.checks.rows.get('render');const renderFinished=!this.registry.available('render')||(render&&render.state!=='checking');
     const vercel=this.checks.rows.get('vercel'),vercelFinished=!this.registry.available('vercel')||(vercel&&vercel.state!=='checking');
     const rememberedPending=this.lastSuccess&&this.registry.available(this.lastSuccess)&&(!this.checks.rows.has(this.lastSuccess)||this.checks.rows.get(this.lastSuccess).state==='checking');
-    if(windowPassed||(renderFinished&&!rememberedPending&&(this.usable('vercel')||vercelFinished))){const candidates=[this.lastSuccess,...SERVER_ORDER].filter(Boolean);const id=candidates.find(id=>id!=='render'&&this.usable(id));if(id){finish(id);return;}}
+    if(windowPassed||(renderFinished&&!rememberedPending&&(this.usable('vercel')||vercelFinished))){const candidates=[this.lastSuccess,...SERVER_ORDER].filter(id=>SERVER_ORDER.includes(id));const id=candidates.find(id=>id!=='render'&&this.usable(id));if(id){finish(id);return;}}
     if(this.registry.entries.every(e=>!this.registry.available(e.id)||['ok','error','disabled','unconfigured'].includes(this.checks.rows.get(e.id)?.state)))finish();
    };
    this.evaluate=evaluate;timer=setTimeout(()=>{windowPassed=true;evaluate();},this.windowMs);deadline=setTimeout(()=>{windowPassed=true;evaluate();if(!settled)finish();},this.selectionMs);
    this.checks.checkAll().then(evaluate);evaluate();
   });
  }
- resume(){if(this.deferred&&!this.isBusy()){const id=this.deferred;this.deferred=null;if(this.usable(id)){this.registry.select(id);this.change('ready');}}}
+ resume(){if(this.deferred&&!this.isBusy()){const id=this.deferred;this.deferred=null;if((this.mode==='auto'?SERVER_ORDER.includes(id):this.mode===id)&&this.usable(id)){this.registry.select(id);this.change('ready');}}}
  checkAfterIdle(){return this.now()-this.lastChecked>=600000?this.check():Promise.resolve(this.ready);}
 }
