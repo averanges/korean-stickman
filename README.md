@@ -1,6 +1,6 @@
 # Korean Stickman — «Создай своего героя» + «Мой дом»
 
-STT 3.0.2: отдельный эксперимент A–D для Groq Whisper и OpenAI GPT-Transcribe. Основной STT не переключён. [Настройка Vercel, запуск и предварительные результаты](docs/STT-3.0.2.md).
+STT 3.0.2: эксперимент A–D только через Groq: Whisper V3 Turbo и Whisper V3, каждый без prompt и с одинаковым prompt. Основной STT не переключён. [Настройка Vercel, запуск и предварительные результаты](docs/STT-3.0.2.md).
 
 Amvera добавлена четвёртым STT-сервером только для ручного выбора. [Публикация Pages и первая проверка аудио](docs/AMVERA-INTEGRATION.md).
 

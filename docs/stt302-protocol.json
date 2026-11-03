@@ -2,10 +2,30 @@
   "version": "3.0.2",
   "language": "ko",
   "variants": [
-    "A",
-    "B",
-    "C",
-    "D"
+    {
+      "id": "A",
+      "provider": "groq",
+      "model": "whisper-large-v3-turbo",
+      "prompt": false
+    },
+    {
+      "id": "B",
+      "provider": "groq",
+      "model": "whisper-large-v3-turbo",
+      "prompt": true
+    },
+    {
+      "id": "C",
+      "provider": "groq",
+      "model": "whisper-large-v3",
+      "prompt": false
+    },
+    {
+      "id": "D",
+      "provider": "groq",
+      "model": "whisper-large-v3",
+      "prompt": true
+    }
   ],
   "samples": [
     {
@@ -106,5 +126,7 @@
     }
   ],
   "suggestedPlan": "Two speakers; two independent takes for target phrases; one take for each other phrase. Same recording in all four variants.",
-  "audioFilesIncluded": false
+  "audioFilesIncluded": false,
+  "matrixId": "groq-whisper-v1",
+  "realAudioStatus": "Requested full-sentence audio recordings were not found in the workspace. No substitute recordings used."
 }
