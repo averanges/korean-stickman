@@ -43,6 +43,29 @@ test('public full-stack preview uses its own HTTPS origin and in-memory classroo
     assert.equal((await request(app,'/.env',{headers})).status,404);
   });
 });
+test('Render API mode serves Pages classroom preflights and STT independently',async()=>{
+  const origin='https://averanges.github.io',apiOrigin='https://stickman.onrender.com';
+  const headers={Host:new URL(apiOrigin).host,Origin:origin};
+  const providerFactory=()=>({transcribe:async()=>({text:'침대'})});
+  await withApp({config,origins:[apiOrigin],frontends:[origin],apiOnly:true,renderLessons:true,providerFactory},async app=>{
+    assert.equal((await request(app,'/teacher.html',{headers})).status,404);
+    const health=await request(app,'/teacher-api/health',{headers});
+    assert.equal(JSON.parse(health.text).version,'0.3.0');
+    const preflight=await request(app,'/teacher-api/rooms',{method:'OPTIONS',headers:{
+      ...headers,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'
+    }});
+    assert.equal(preflight.status,204);
+    assert.equal(preflight.headers['access-control-allow-origin'],origin);
+    const room=await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
+    assert.equal(room.status,201);
+    assert.equal(JSON.parse(room.text).serverVersion,'0.3.0');
+    assert.equal((await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,Origin:'https://other.example.test','Content-Type':'application/json'},body:'{}'})).status,403);
+    const stt=await request(app,'/transcribe',{method:'POST',headers:{...headers,'Content-Type':'audio/webm','X-Requested-With':'KoreanStickman','X-Audio-Duration-Ms':'1000'},body:Buffer.alloc(200)});
+    assert.equal(stt.status,200);
+    assert.equal(JSON.parse(stt.text).text,'침대');
+    assert.equal(stt.headers['access-control-allow-origin'],origin);
+  });
+});
 test('Render URL is explicit HTTPS; unexpected public domains and unsafe URL settings are rejected',()=>{
   assert.deepEqual(publicOrigins({RENDER_EXTERNAL_URL:'https://stickman.onrender.com'}),['https://stickman.onrender.com']);
   assert.deepEqual(publicOrigins({RENDER_EXTERNAL_HOSTNAME:'stickman.onrender.com'}),['https://stickman.onrender.com']);

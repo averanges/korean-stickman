@@ -13,21 +13,25 @@ const projectURL=new URL('.',import.meta.url);
 const root=path.resolve(fileURLToPath(projectURL));
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'};
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
-export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),frontends=configuredFrontends(),apiOnly=process.env.RENDER==='true'||process.env.API_ONLY==='true',localLessonsPort,teacherPreview=false,gate=new SttGate(),interpreterFactory,llmGate,llmTimeoutMs,experimentProviderFactory,experimentGate,experimentTimeoutMs}={}){
+export function createApp({config=()=>readConfig(projectURL),providerFactory=options=>new GroqWhisper(options),origins=publicOrigins(),frontends=configuredFrontends(),apiOnly=process.env.RENDER==='true'||process.env.API_ONLY==='true',renderLessons=process.env.RENDER==='true',localLessonsPort,teacherPreview=false,gate=new SttGate(),interpreterFactory,llmGate,llmTimeoutMs,experimentProviderFactory,experimentGate,experimentTimeoutMs}={}){
   const previewOrigin=teacherPreview?origins[0]:null;
   if(teacherPreview&&(!previewOrigin||origins.length!==1||apiOnly))throw Error('Teacher preview needs one public HTTPS origin and full-stack mode');
   const api=createSttApi({platform:'render',config,providerFactory,origins,frontends,gate,interpreterFactory,llmGate,llmTimeoutMs,experimentProviderFactory,experimentGate,experimentTimeoutMs});
-  const lessonRooms=(previewOrigin||localLessonsPort)&&!apiOnly?new LessonRooms():null;
-  const lessonHandler=lessonRooms&&createTeacherHandler({
-    rooms:lessonRooms,
-    origins:previewOrigin?[previewOrigin]:[`http://localhost:${localLessonsPort}`,`http://127.0.0.1:${localLessonsPort}`],
-  });
+  const lessonOrigins=previewOrigin?[previewOrigin]
+    :renderLessons?(frontends.length?frontends:['https://averanges.github.io'])
+    :localLessonsPort&&!apiOnly?[`http://localhost:${localLessonsPort}`,`http://127.0.0.1:${localLessonsPort}`]:[];
+  const lessonRooms=lessonOrigins.length?new LessonRooms():null;
+  const lessonHandler=lessonRooms&&createTeacherHandler({rooms:lessonRooms,origins:lessonOrigins});
   const server=http.createServer(async(req,res)=>{
     try{
       const host=req.headers.host||'';
+      if(lessonHandler&&req.url.startsWith('/teacher-api/')){
+        if(!allowedRequest(req,origins,lessonOrigins)){json(res,403,{error:'forbidden'});return;}
+        await lessonHandler(req,res);
+        return;
+      }
       if(!allowedRequest(req,origins,frontends)){json(res,403,{error:'forbidden'});return;}
       const pathname=decodeURIComponent(new URL(req.url,`http://${host}`).pathname);
-      if(lessonHandler&&pathname.startsWith('/teacher-api/')){await lessonHandler(req,res);return;}
       if(API_PATHS.includes(pathname)){await nodeApi(api,req,res,pathname);return;}
       if(req.method!=='GET'&&req.method!=='HEAD'){json(res,405,{error:'method-not-allowed'});return;}
       if(apiOnly){json(res,404,{error:'api-only'});return;}
