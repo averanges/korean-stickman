@@ -1,3 +1,4 @@
+import {validAge,validFamily} from './identity-topics.js';
 import {ACTIONS,OBJECTS,catalogs,NOUNS} from './language-catalog.js';
 const own=(o,k)=>Object.hasOwn(o,k),plain=o=>o!==null&&typeof o==='object'&&!Array.isArray(o)&&Object.getPrototypeOf(o)===Object.prototype;
 const keys=(o,allowed)=>plain(o)&&Object.keys(o).every(k=>allowed.includes(k));
@@ -10,6 +11,8 @@ export function validateDocument(data,level){
  return data.intents.every(i=>{
   if(!keys(i,['kind','target','action','attributes','params','speechAct','polarity','tense'])||Object.keys(i).length!==8||!plain(i.attributes)||!plain(i.params)||!FEATURES.speechAct.includes(i.speechAct)||!FEATURES.polarity.includes(i.polarity)||!FEATURES.tense.includes(i.tense))return false;
   if(level==='creator'){
+   if(i.kind==='set_age')return i.target===null&&i.action===i.kind&&!Object.keys(i.attributes).length&&keys(i.params,['age'])&&Object.keys(i.params).length===1&&validAge(i.params.age);
+   if(i.kind==='family')return i.target===null&&i.action===i.kind&&!Object.keys(i.attributes).length&&keys(i.params,['members','present'])&&Object.keys(i.params).length===2&&validFamily(i.params.members)&&i.params.members.length>0&&typeof i.params.present==='boolean';
    if(!['greet','set_character_attributes'].includes(i.kind)||i.target!==null||i.action!==i.kind||Object.keys(i.params).length)return false;
    if(i.kind==='greet')return Object.keys(i.attributes).length===0;
    return Object.keys(i.attributes).length>0&&Object.entries(i.attributes).every(([f,v])=>own(catalogs,f)&&typeof v==='string'&&own(catalogs[f],v));
@@ -32,7 +35,7 @@ export function validateForWorld(document,context,{legacyBatch=false}={}){
  if(document.status!=='resolved')return {ok:false,reason:document.reason};
  if(context.level==='home'&&document.intents.length>1&&!legacyBatch)return {ok:false,reason:'multiple-actions',message:'Вижу несколько действий. Давай выполним их по одному.'};
  for(const i of document.intents){
-  if(i.speechAct==='question'||i.speechAct==='prohibition'||i.speechAct==='description'||i.speechAct==='unknown'||i.tense==='past'||i.tense==='unknown'||i.polarity!=='positive'&&!(i.kind==='remove'&&i.polarity==='negative'))return {ok:false,reason:'unsafe',message:'Это описание, вопрос или отрицание — новое действие не запускается.'};
+  if(i.speechAct==='question'||i.speechAct==='prohibition'||i.speechAct==='description'||i.speechAct==='unknown'||i.tense==='past'||i.tense==='unknown'||i.polarity!=='positive'&&!(i.kind==='remove'&&i.polarity==='negative')&&!(i.kind==='family'&&i.params.present===false&&i.polarity==='negative'))return {ok:false,reason:'unsafe',message:'Это описание, вопрос или отрицание — новое действие не запускается.'};
   if(i.tense==='dictionary'&&!context.dictionary)return {ok:false,reason:'unsupported',message:'В этом режиме нужна полная фраза.'};
   if(context.level==='home'){
    if(i.kind!=='create'&&i.target&&!context.items.includes(i.target))return {ok:false,reason:'missing',message:'Нужен предмет: '+NOUNS[i.target][0]+'. Сначала добавь его в комнату.'};
@@ -44,6 +47,8 @@ export function validateForWorld(document,context,{legacyBatch=false}={}){
 }
 export function engineCommand(document,raw){
  const commands=document.intents.map(i=>{
+  if(i.kind==='set_age')return {ok:true,action:'set_age',age:i.params.age,canonical:i.params.age+' 살이에요',heard:raw};
+  if(i.kind==='family')return {ok:true,action:'family',members:i.params.members,present:i.params.present,canonical:raw,heard:raw};
   if(i.kind==='greet')return {ok:true,action:'greet',canonical:'안녕하세요',heard:raw,text:raw};
   if(i.kind==='set_character_attributes')return Object.entries(i.attributes).map(([field,value])=>({ok:true,action:'set',field,value,canonical:catalogs[field][value].ko+'입니다',heard:raw,text:raw}));
   return {action:i.kind,item:i.kind==='lesson'?i.action:i.target,...(i.kind==='toggle'?{value:i.params.on}:{})};

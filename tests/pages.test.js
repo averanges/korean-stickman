@@ -43,11 +43,13 @@ test('API URLs work on Pages subpath and local dev; missing public configuration
 test('Pages build publishes only public assets and supports /korean-stickman/ without backend requests',async()=>{
   const output=await mkdtemp(path.join(tmpdir(),'stickman-pages-'));
   const override='https://replacement-api.onrender.com';
-  await buildPages({apiBase:override,output});
+  await buildPages({apiBase:override,teacherBase:'https://lessons.example.test',output});
   const names=await readdir(output,{recursive:true});
-  for(const name of names)assert.ok(name==='src'||name==='docs'||name==='index.html'||name==='.nojekyll'||/^src[\\/][a-z0-9-]+\.(js|css)$/u.test(name)||/^docs[\\/]assets.svg$/u.test(name),name);
+  for(const name of names)assert.ok(name==='src'||name==='docs'||name==='index.html'||name==='teacher.html'||name==='.nojekyll'||/^src[\\/][a-z0-9-]+\.(js|css)$/u.test(name)||/^docs[\\/]assets.svg$/u.test(name),name);
   const html=await readFile(path.join(output,'index.html'),'utf8');
   assert.match(html,/href="src\/style.css"/);assert.match(html,/src="src\/main.js"/);assert.doesNotMatch(html,/<script[^>]+https?:/);
+  const teacher=await readFile(path.join(output,'src','teacher-config.js'),'utf8');assert.ok(teacher.includes('https://lessons.example.test'));
+  const teacherHtml=await readFile(path.join(output,'teacher.html'),'utf8');assert.match(teacherHtml,/src="src\/teacher-ui.js"/);assert.equal(new URL('teacher.html','https://averanges.github.io/korean-stickman/').pathname,'/korean-stickman/teacher.html');
   const api=await readFile(path.join(output,'src','api-config.js'),'utf8');assert.ok(api.includes(override));assert.ok(!api.includes(backend));
   for(const name of names.filter(name=>/\.js$/u.test(name))){
     const source=await readFile(path.join(output,name),'utf8');

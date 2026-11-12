@@ -1,3 +1,4 @@
+import {parseIdentityTopics} from './identity-topics.js';
 import {ACTIONS,NOUNS,OBJECTS,catalogs} from './language-catalog.js';
 import {makeIntent,documentOf} from './language-contract.js';
 import {parseRoom} from './room-state.js';
@@ -18,6 +19,10 @@ export function grammarFeatures(text){
 }
 function hero(raw,context,{voice=false,profile={}}={}){
  const text=normalizeText(raw),b=compact(text),features=grammarFeatures(text),who={...context.attributes,...profile};
+ const topics=parseIdentityTopics(text,profile);if(topics){if(topics.error)return result(documentOf(topics.error==='ambiguous'?'clarify':'blocked',[],topics.error),{terminal:true});const intents=topics.commands.map(c=>makeIntent(c.kind,null,c.kind,{},c.kind==='set_age'?{age:c.age}:{members:c.members,present:c.present},{polarity:c.kind==='family'&&!c.present?'negative':'positive'}));if(topics.rest){const prior=hero(topics.rest,context,{voice,profile});if(prior.document.status!=='resolved')return prior;intents.push(...prior.document.intents);}return intents.length&&intents.length<=4?result(documentOf('resolved',intents),{terminal:true}):blocked('invalid');}
+
+ // An unknown noun in a complete presence statement needs repetition, not a guessed relative.
+ if(/(?:있어요|없어요|있습니다|없습니다)$/u.test(b))return result(documentOf('unresolved',[],'unsupported'),{terminal:true});
  const prior=voice?interpretSpeech([{text}],who):parseKorean(text,who);
  if(prior.ok){
   const claims=prior.commands||[prior];const attrs=Object.fromEntries(claims.filter(c=>c.action==='set').map(c=>[c.field,c.value]));
@@ -59,6 +64,7 @@ function nounSpans(text,id){
 }
 export function anchored(intent,text,context){
  const b=compact(text),a=ACTIONS[intent.action];
+ if(['set_age','family'].includes(intent.kind)){const topics=parseIdentityTopics(text);return Boolean(topics&&!topics.error&&topics.commands.some(c=>c.kind===intent.kind&&(c.kind==='set_age'?c.age===intent.params.age:c.present===intent.params.present&&c.members.length===intent.params.members.length&&c.members.every(id=>intent.params.members.includes(id)))));}
  if(intent.kind==='greet')return /안녕/u.test(b);
  if(intent.kind==='set_character_attributes')return Object.entries(intent.attributes).every(([field,value])=>{const noun=compact(catalogs[field][value].ko);return field==='country'?new RegExp(noun.replace(/사람$/u,'')+'(?:사람|인|이에요|입니다|예요|이고|'+Object.values(catalogs.profession).map(p=>p.ko).join('|')+')','u').test(b):new RegExp(noun+'(?:이에요|예요|입니다|이고|이다|이야|야|죠)','u').test(b);});
  const spans=id=>nounSpans(normalizeText(text),id),explicit=intent.target&&spans(intent.target).length>0;

@@ -53,11 +53,11 @@ export const FIT = {
   microphone:{scale:.73,grip:[0,-78]}, notebook:{scale:.72,grip:[-8,-78]},
 };
 export function flagAnchor(pose) { return {x:pose.h[0]+77,y:pose.h[1]-20,scale:.69,rotation:0}; }
-export function attachment(slot,pose,look) {
+export function attachment(slot,pose,look,{headScale=1}={}) {
   const id=look[slot],fit=FIT[id]||{scale:.8,x:0,y:-49};
   if(slot==='hat') {
-    const radians=pose.angle*Math.PI/180,dx=fit.x||0,dy=fit.y;
-    return {x:pose.h[0]+dx*Math.cos(radians)-dy*Math.sin(radians),y:pose.h[1]+dx*Math.sin(radians)+dy*Math.cos(radians),scale:fit.scale,rotation:pose.angle};
+    const radians=pose.angle*Math.PI/180,dx=(fit.x||0)*headScale,dy=fit.y*headScale;
+    return {x:pose.h[0]+dx*Math.cos(radians)-dy*Math.sin(radians),y:pose.h[1]+dx*Math.sin(radians)+dy*Math.cos(radians),scale:fit.scale*headScale,rotation:pose.angle};
   }
   const spineAngle=-Math.atan2(pose.p[0]-pose.n[0],pose.p[1]-pose.n[1])*180/Math.PI;
   if(slot==='back'||slot==='body'){

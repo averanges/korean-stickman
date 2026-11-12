@@ -1,3 +1,4 @@
+import {ageStyle,ageBand} from './identity-topics.js';
 import { appearance, countries, professions } from './catalog.js';
 import { asset, flag, chairArt, boxLayers } from './assets.js';
 import { POSES, BOX, FIT, lerp, ease, mixPose, bodyFrame, articulate, attachment, flagAnchor, heldAtWrist, attachmentFlight, transformAt, propTransform } from './geometry.js';
@@ -6,7 +7,7 @@ const copyPose=pose=>mixPose(pose,pose,0);
 const point=p=>p.join(' ');
 export class Renderer {
   constructor(profile) {
-    this.actor=document.querySelector('#actor');this.arm=document.querySelector('#front-arm');
+    this.actor=document.querySelector('#actor');this.arm=document.querySelector('#front-arm');this.ageLayers=[this.actor,this.arm,document.querySelector('#age-held'),document.querySelector('#age-inside')].filter(Boolean);
     this.held=document.querySelector('#held');this.inside=document.querySelector('#held-inside');
     this.box=document.querySelector('#accessory-box');this.boxBack=document.querySelector('#accessory-box-back');
     this.hint=document.querySelector('#greeting-hint');
@@ -19,6 +20,7 @@ export class Renderer {
     const idle=time=>{
       if(!this.animating&&this.visible&&time-last>40){
         last=time;const p=copyPose(this.pose);
+        if(this.teacherCue==='thinking'){p.re=[p.n[0]+47,p.n[1]+48];p.rw=[p.h[0]+33,p.h[1]+40];if(!this.motionReduced)p.angle+=Math.sin(time/420)*3;}
         if(!this.motionReduced){p.h[1]+=Math.sin(time/700)*(this.asleep?2:1);p.n[1]+=Math.sin(time/700)*.5;}
         if(this.asleep&&!this.motionReduced)p.angle+=Math.sin(time/1000)*2;
         else if(!this.asleep&&time%4700<130)p.eye=.05;
@@ -34,13 +36,16 @@ export class Renderer {
   }
   clearHeld(){for(const layer of [this.held,this.inside]){layer.replaceChildren();layer.removeAttribute('transform');}}
   reset(profile){
-    this.generation++;this.animating=false;this.profile={...profile};this.look=appearance(profile);this.asleep=!profile.awake;
+    this.agePreview=null;this.teacherCue=null;this.generation++;this.animating=false;this.profile={...profile};this.look=appearance(profile);this.asleep=!profile.awake;
     this.pose=copyPose(this.asleep?POSES.sleep:POSES.stand);this.hideSlot=null;this.hideHandForSearch=false;this.question=false;
     this.clearHeld();this.updateBox();this.setPhase(this.asleep?'sleep':'stand');
-    this.hint.classList.toggle('dismissed',!this.asleep);this.hint.setAttribute('aria-hidden',String(!this.asleep));this.draw();
+    this.hint.classList.toggle('dismissed',!this.asleep);this.hint.setAttribute('aria-hidden',String(!this.asleep));this.draw();this.familyBoard?.update(profile,this.heroPortrait(),{instant:true});
   }
-  setProfile(profile){this.profile={...profile};this.look=appearance(profile);this.draw();}
+  setProfile(profile){this.profile={...profile};this.look=appearance(profile);this.agePreview=null;this.draw();this.familyBoard?.update(profile,this.heroPortrait());}
   // The portrait uses both character layers, preserving the existing world screen.
+  heroPortrait(){const [x,y]=this.pose.h;return `<svg viewBox="${x-92} ${y-100} 184 192" aria-hidden="true">${this.portraitMarkup()}</svg>`;}
+  async changeFamily(next){this.familyBoard?.update(next,this.heroPortrait());return this.tween(250,()=>{});}
+  async changeAge(next){const from=ageStyle(this.profile.age),to=ageStyle(next.age);const done=await this.tween(450,t=>{this.agePreview={scale:lerp(from.scale,to.scale,ease(t)),head:lerp(from.head,to.head,ease(t))};this.draw();});if(done){this.agePreview=null;this.profile={...next};this.draw();}return done;}
   portraitMarkup(){return this.actor.innerHTML+this.arm.innerHTML;}
   // Level 2 uses the same skeleton, face and equipped appearance in its own scene.
   roomMarkup(pose,options={}){const layers=this.roomLayers(pose,options);return layers.body+layers.arm;}
@@ -62,12 +67,14 @@ export class Renderer {
     });
   }
   move(target,duration){const from=copyPose(this.pose);return this.tween(duration,t=>{this.pose=mixPose(from,target,ease(t));this.draw();});}
-  anchor(slot,pose=this.pose,look=this.look){const at=attachment(slot,pose,look),blend=this.roomBackBlend??(this.roomView==='back'?1:0);return slot==='back'&&blend?{...at,x:lerp(at.x,pose.n[0],blend),y:lerp(at.y,pose.n[1]+95,blend)}:at;}
+  anchor(slot,pose=this.pose,look=this.look){const at=attachment(slot,pose,look,{headScale:(this.agePreview||ageStyle(this.profile?.age)).head}),blend=this.roomBackBlend??(this.roomView==='back'?1:0);return slot==='back'&&blend?{...at,x:lerp(at.x,pose.n[0],blend),y:lerp(at.y,pose.n[1]+95,blend)}:at;}
   placed(id,slot,pose){
     return !id||this.hideSlot===slot||(slot==='hand'&&this.hideHandForSearch)?'':`<g data-slot="${slot}" data-asset="${id}" transform="${transformAt(this.anchor(slot,pose))}">${asset(id)}</g>`;
   }
   draw(raw=this.pose){
-    const p=articulate(raw),frame=bodyFrame(p);
+    const p=articulate(raw),frame=bodyFrame(p),age=this.agePreview||ageStyle(this.profile?.age),senior=ageBand(this.profile?.age)==='senior';
+    const seated=Math.max(0,Math.min(1,(p.p[1]-520)/54)),anchorY=lerp(681,p.p[1],seated),anchorX=p.p[0];
+    for(const layer of this.ageLayers||[])layer.setAttribute('transform',`translate(${anchorX} ${anchorY}) scale(${age.scale}) translate(${-anchorX} ${-anchorY})`);
     const limb=(points,width=5)=>`<path d="M${points.length===3?point(points[0])+'Q'+point(points[1])+' '+point(points[2]):points.map(point).join('L')}" fill="none" stroke="#25272c" stroke-width="${width+1}"/><path d="M${points.length===3?point(points[0])+'Q'+point(points[1])+' '+point(points[2]):points.map(point).join('L')}" fill="none" stroke="#25272c" stroke-width="${width}"/>`;
     const [hx,hy]=p.h,[nx,ny]=p.n,[px,py]=p.p,[sx,sy]=frame.side;
     const torso=`M${nx-sx*14} ${ny-sy*14}Q${lerp(nx,px,.5)-sx*22} ${lerp(ny,py,.5)-sy*22} ${px-sx*19} ${py-sy*19}Q${px-sy*10} ${py+sx*10} ${px+sx*19} ${py+sy*19}Q${lerp(nx,px,.5)+sx*17} ${lerp(ny,py,.5)+sy*17} ${nx+sx*14} ${ny+sy*14}Z`;
@@ -81,9 +88,10 @@ export class Renderer {
       <g data-part="far-leg">${limb([frame.hipLeft,p.lk,p.la,p.lf])}</g><g data-part="near-leg">${limb([frame.hipRight,p.rk,p.ra,p.rf])}</g>
       <g data-part="rear-arm">${limb([frame.shoulderLeft,p.le,p.lw])}</g><path data-part="torso" d="${torso}" fill="#fff" stroke="#25272c" stroke-width="6"/>
       ${back?this.placed(this.look.back,'back',p):this.placed(this.look.body,'body',p)}
-      <g data-part="head" transform="translate(${hx} ${hy}) rotate(${p.angle})">${hair}<ellipse rx="62" ry="62" fill="${back&&this.look.hair?'#49423f':'#fff'}" stroke="#25272c" stroke-width="7"/>${back?'':fringe}${eyes}
+      <g data-part="head" transform="translate(${hx} ${hy}) rotate(${p.angle}) scale(${age.head})">${senior?hair.replaceAll('#49423f','#b5b3ad'):hair}<ellipse rx="62" ry="62" fill="${back&&this.look.hair?'#49423f':'#fff'}" stroke="#25272c" stroke-width="7"/>${back?'':senior?fringe.replaceAll('#49423f','#b5b3ad'):fringe}${eyes}${senior?'<g data-age-detail="glasses" fill="none" stroke="#74716a" stroke-width="2.5"><rect x="-18" y="-3" width="25" height="23" rx="8"/><rect x="15" y="-5" width="25" height="23" rx="8"/><path d="M7 6H15"/></g>':''}
       ${back?'':`<path d="${this.asleep?'M11 32Q18 28 24 32':this.question?'M11 31Q18 25 25 30':front?'M-13 28Q0 41 15 28':'M6 30Q18 42 31 27'}" fill="none" stroke="#25272c" stroke-width="3.5"/>`}${this.placedHead()}</g>
       ${this.look.flag&&!this.roomHideFlag?`<g data-slot="flag" data-flag="${this.look.flag}" transform="${transformAt(flagAnchor(p))}">${flag(this.look.flag)}</g>`:''}
+      ${this.teacherCue?`<text data-teacher-cue="${this.teacherCue}" x="${hx+68}" y="${hy-65}" font-family="Segoe UI,sans-serif" font-size="40" font-weight="700" fill="${this.teacherCue==='understood'?'#eead28':'#ae8b45'}">${this.teacherCue==='thinking'?'…':this.teacherCue==='understood'?'!':'?'}</text>`:''}
       ${this.question?`<text x="${hx+73}" y="${hy-72}" font-family="Segoe UI,sans-serif" font-size="45" font-weight="700" fill="#dfad43">?</text>`:''}
       ${this.asleep?`<g class="sleep-z" transform="translate(${hx+60} ${hy-78}) rotate(-14)"><text fill="#454448" font-size="37" font-style="italic" font-weight="700">Z<tspan dy="-11" font-size="28">z</tspan><tspan dy="-8" font-size="20">z…</tspan></text></g>`:''}</g>`;
     this.arm.innerHTML=`<g data-part="front-arm" stroke-linecap="round" stroke-linejoin="round">${limb([frame.shoulderRight,p.re,p.rw])}${this.placed(this.look.hand,'hand',p)}</g>`;
@@ -104,6 +112,15 @@ export class Renderer {
       this.pose.ra[1]-=Math.sin(t*Math.PI)*16;this.pose.rf[1]-=Math.sin(t*Math.PI)*16;this.draw();
     });
     if(done)this.setPhase('stand');return done;
+  }
+  clearTeacherFeedback(){this.teacherCue=null;if(!this.animating)this.setPhase(this.asleep?'sleep':'stand');this.draw();}
+  async teacherFeedback(cue){
+    this.teacherCue=null;
+    if(cue==='reset'){this.setPhase(this.asleep?'sleep':'stand');this.draw();return true;}
+    if(cue==='thinking'){this.teacherCue='thinking';this.setPhase('thinking');this.draw();return true;}
+    const from=copyPose(this.pose);this.teacherCue=cue==='understood'?'understood':'wrong';this.setPhase(this.teacherCue);
+    const done=await this.tween(cue==='understood'?350:800,t=>{this.pose=copyPose(from);this.pose.angle+=Math.sin(t*Math.PI)*(cue==='understood'?-7:12);if(cue!=='understood'){this.pose.re=[from.n[0]+45,from.n[1]+42];this.pose.rw=[from.h[0]+48,from.h[1]-12];}this.draw();});
+    if(done){this.pose=from;this.teacherCue=null;this.setPhase(this.asleep?'sleep':'stand');this.draw();}return done;
   }
   async confused(){
     const from=copyPose(this.pose);this.question=true;this.setPhase('confused');
@@ -128,6 +145,7 @@ export class Renderer {
       this.draw();this.updateBox(Math.sin(t*Math.PI*6)*.55);
     }))return false;
     this.updateBox();this.setPhase('lift');
+    this.clearHeld();this.inside.setAttribute('transform',transformAt(heldAtWrist(id,this.pose,flagOnly)));
     this.inside.innerHTML=flagOnly?flag(countries[command.value].flag):asset(id);
     if(!await this.moveWithHeld(POSES.show,700,id,flagOnly))return false;
     this.setPhase('show');if(!await this.tween(350,()=>this.draw()))return false;
@@ -135,7 +153,7 @@ export class Renderer {
     const from=copyPose(this.pose),start=heldAtWrist(id,from,flagOnly);
     if(!await this.tween(900,t=>{
       const e=ease(t);this.pose=mixPose(from,POSES.stand,e);this.draw();
-      const end=flagOnly?flagAnchor(POSES.stand):attachment(slot,POSES.stand,nextLook);
+      const end=flagOnly?flagAnchor(POSES.stand):this.anchor(slot,POSES.stand,nextLook);
       const at=attachmentFlight(start,end,t);
       this.held.setAttribute('transform',transformAt(at));
     }))return false;
@@ -145,7 +163,7 @@ export class Renderer {
     const from=copyPose(this.pose);let emerged=false;
     return this.tween(duration,t=>{
       this.pose=mixPose(from,target,ease(t));this.draw();
-      if(t>=.72&&!emerged){this.held.append(...this.inside.childNodes);this.inside.removeAttribute('transform');emerged=true;}
+      if(t>=.72&&!emerged){this.held.setAttribute('transform',transformAt(heldAtWrist(id,this.pose,flagOnly)));this.held.append(...this.inside.childNodes);this.inside.removeAttribute('transform');emerged=true;}
       const layer=emerged?this.held:this.inside;
       layer.setAttribute('transform',transformAt(heldAtWrist(id,this.pose,flagOnly)));
     });

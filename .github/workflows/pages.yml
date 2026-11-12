@@ -1,4 +1,4 @@
-name: Publish frontend to GitHub Pages
+name: Teacher Mode 0.3 preview only
 on:
   workflow_dispatch:
 permissions:
@@ -8,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: endsWith(github.event.repository.name, '-teacher03-preview')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -17,12 +18,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Require the separate classroom service
+        env:
+          TEACHER_API_BASE_URL: ${{ vars.TEACHER_API_BASE_URL }}
+        run: test -n "$TEACHER_API_BASE_URL"
       - run: npm run build:pages
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL || 'https://korean-stickman.onrender.com' }}
           NETLIFY_API_BASE_URL: ${{ vars.NETLIFY_API_BASE_URL || 'https://incandescent-lollipop-01828a.netlify.app' }}
           VERCEL_API_BASE_URL: ${{ vars.VERCEL_API_BASE_URL || 'https://korean-stickman.vercel.app' }}
           AMVERA_API_BASE_URL: ${{ vars.AMVERA_API_BASE_URL || 'https://korean-stickman-averanges.msk1.amvera.tech' }}
+          TEACHER_API_BASE_URL: ${{ vars.TEACHER_API_BASE_URL || '' }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

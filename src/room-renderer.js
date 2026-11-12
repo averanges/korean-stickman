@@ -26,7 +26,7 @@ export class RoomRenderer{
   get position(){return this.state.hero.position;}
   get facing(){return this.state.hero.facing;}
   phase(value,message){this.scene.dataset.phase=value;this.onPhase(message);}
-  synchronize(){this.lessonVisual=null;this.lessonResult=null;this.visitor=null;this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
+  synchronize(){this.teacherCue=null;this.lessonVisual=null;this.lessonResult=null;this.visitor=null;this.restingSupport=null;this.previewItems=null;this.previewLocations=null;this.effects={};this.pose=this.state?.held?carryPose():(this.state?restPose(this.state):clonePose(POSES.stand));this.poseFacing=this.state?.hero.facing||'right';this.carry={angle:0,open:0};this.turn=null;this.interactionSurface=this.state?.held?this.state.objects[this.state.held].returnTo?.surface:null;this.question=false;this.phase('idle','Герой готов к следующей фразе.');this.draw();}
   cancel(){this.generation++;this.route=[];this.navigation=null;this.heading=null;this.synchronize();this.phase('idle','Герой готов к следующей фразе.');}
   setPlacement(plan){this.placement=plan;this.navigation=null;this.draw();}
   setDebug(value){this.debug=value;this.draw();}
@@ -47,6 +47,13 @@ export class RoomRenderer{
         p[side+'a'][1]-=Math.sin(t*Math.PI)*6;p[side+'f'][1]-=Math.sin(t*Math.PI)*6;this.pose=p;
       }))return false;
     }this.pose=target;this.draw();return true;
+  }
+  clearTeacherFeedback(){this.teacherCue=null;this.draw();}
+  async teacherFeedback(cue){
+    if(cue==='reset'){this.teacherCue=null;this.phase('idle','Можно продолжать.');this.draw();return true;}
+    this.teacherCue=cue;this.phase(cue,cue==='thinking'?'Думаю…':cue==='understood'?'Понял!':'Попробуй ещё раз.');
+    const from=clonePose(this.pose),done=await this.tween(cue==='thinking'?900:cue==='understood'?350:650,t=>{this.pose=clonePose(from);if(!this.reduced)this.pose.angle+=Math.sin(t*Math.PI)*(cue==='understood'?-6:4);});
+    if(done){this.pose=from;if(cue!=='thinking'){this.teacherCue=null;this.phase('idle','Можно продолжать.');}this.draw();}return done;
   }
   async confused(){this.question=true;this.phase('missing','Не получилось. Проверь предмет и доступность места.');const ok=await this.tween(650,()=>{});if(ok){this.question=false;this.draw();}return ok;}
   async moveTo(context){
@@ -147,7 +154,8 @@ export class RoomRenderer{
   heroFrame(facing,opacity=1,part='all'){
     const p=project(this.position),scale=heroScale(this.position),sign=facingSign(facing),held=this.state.held;
     const backBlend=this.turn?lerp(this.turn.from==='back'?1:0,this.turn.to==='back'?1:0,this.turn.t):(facing==='back'?1:0);
-    if(!this.frameLayers.has(facing))this.frameLayers.set(facing,this.hero.roomLayers(poseInFacing(this.pose,this.poseFacing||this.facing,facing),{using:Boolean(held||this.lessonVisual),question:this.question,facing,hideFlag:true,backBlend}));
+    const visualPose=clonePose(this.pose);if(this.teacherCue==='thinking'){visualPose.lw=[visualPose.h[0]-28,visualPose.h[1]+38];}
+    if(!this.frameLayers.has(facing))this.frameLayers.set(facing,this.hero.roomLayers(poseInFacing(visualPose,this.poseFacing||this.facing,facing),{using:Boolean(held||this.lessonVisual),question:this.question,facing,hideFlag:true,backBlend}));
     const layers=this.frameLayers.get(facing),markup=part==='all'?layers.body+layers.arm:layers[part];
     return `<g opacity="${opacity}"><g transform="translate(${p.join(' ')}) scale(${scale*sign} ${scale}) translate(-370 -675)">${markup}</g></g>`;
   }
@@ -182,6 +190,7 @@ export class RoomRenderer{
     const frames=part=>this.turn?this.heroFrame(this.turn.from,1-this.turn.t,part)+this.heroFrame(this.turn.to,this.turn.t,part):this.heroFrame(this.facing,1,part);
     entries.push({id:'hero',depth:heroDepth,html:frames(overTable?'body':'all')+this.flagMarkup()+(overTable?'':this.heldMarkup())});
     if(overTable)entries.push({id:'hero-arm',depth:surfaceDepth+2,html:frames('arm')+this.heldMarkup()});
+    if(this.teacherCue){const p=project(this.position),text=this.teacherCue==='thinking'?'…':this.teacherCue==='understood'?'!':'?';entries.push({id:'teacher-reaction',depth:10000,html:`<text class="${this.teacherCue==='thinking'?'teacher-thinking-marker':''}" x="${p[0]+58}" y="${p[1]-220}" fill="#d5a43d" font-size="30" font-family="Segoe UI" font-weight="700">${text}</text>`});}
     entries.sort((a,b)=>a.depth-b.depth);this.layer.innerHTML=entries.map(({id,depth,html})=>`<g data-room-object="${id}" data-depth="${depth.toFixed(1)}">${html}</g>`).join('');
     this.scene.dataset.position=this.position.map(v=>v.toFixed(3)).join(',');this.scene.dataset.facing=this.facing;this.scene.dataset.view=this.turn?.to||this.facing;this.scene.dataset.held=this.state.held||'';this.scene.dataset.posture=this.state.hero.posture;this.scene.dataset.heading=(this.heading||[0,0]).map(v=>v.toFixed(2)).join(',');
     if(this.navigation){this.scene.dataset.routeLength=routeLength(this.navigation.points).toFixed(1);this.scene.dataset.rawWaypoints=String(this.navigation.raw.length);}
