@@ -5,6 +5,7 @@ import {readdir} from 'node:fs/promises';
 import {createApp} from '../server.mjs';
 import {publicOrigins,SttGate} from '../server/security.mjs';
 import {readConfig} from '../server/config.mjs';
+import {teacherApiBase} from '../src/teacher-config.js';
 const config=async()=>({key:'fake-test-key',model:'whisper-large-v3'});
 function request(app,path='/',{method='GET',headers={},body}={}){
   return new Promise((resolve,reject)=>{
@@ -12,6 +13,59 @@ function request(app,path='/',{method='GET',headers={},body}={}){
   });
 }
 async function withApp(options,check){const app=createApp(options);await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));try{await check(app);}finally{await new Promise(resolve=>app.close(resolve));}}
+test('local prototype serves the panel, lesson API and STT on one origin',async()=>{
+  const origin='http://localhost:5175',headers={Host:'localhost:5175',Origin:origin,'Content-Type':'application/json'};
+  assert.equal(teacherApiBase(new URL(origin+'/teacher.html')),origin);
+  await withApp({config,localLessonsPort:5175},async app=>{
+    assert.equal((await request(app,'/teacher.html')).status,200);
+    const response=await request(app,'/teacher-api/rooms',{method:'POST',headers,body:'{}'});
+    assert.equal(response.status,201);
+    assert.equal(JSON.parse(response.text).serverVersion,'0.3.0');
+    assert.equal((await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,Origin:'https://evil.example'},body:'{}'})).status,403);
+    assert.equal(JSON.parse((await request(app,'/api/stt/status')).text).configured,true);
+    assert.equal((await request(app,'/.env')).status,404);
+  });
+  await withApp({config,localLessonsPort:5175,apiOnly:true},async app=>{
+    assert.equal((await request(app,'/teacher-api/health')).status,404);
+  });
+});
+test('public full-stack preview uses its own HTTPS origin and in-memory classroom API',async()=>{
+  const origin='https://teacher-preview.example.test';
+  const headers={Host:new URL(origin).host,Origin:origin,'Content-Type':'application/json'};
+  await withApp({config,origins:[origin],teacherPreview:true,apiOnly:false},async app=>{
+    assert.equal((await request(app,'/teacher.html',{headers})).status,200);
+    for(const file of ['api-config.js','teacher-config.js']){
+      assert.ok((await request(app,'/src/'+file,{headers})).text.includes(JSON.stringify(origin)));
+    }
+    assert.equal((await request(app,'/teacher-api/rooms',{method:'POST',headers,body:'{}'})).status,201);
+    assert.equal((await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,Origin:'https://other.example.test'},body:'{}'})).status,403);
+    assert.equal((await request(app,'/transcribe',{method:'POST',headers})).status,403);
+    assert.equal((await request(app,'/.env',{headers})).status,404);
+  });
+});
+test('Render API mode serves Pages classroom preflights and STT independently',async()=>{
+  const origin='https://averanges.github.io',apiOrigin='https://stickman.onrender.com';
+  const headers={Host:new URL(apiOrigin).host,Origin:origin};
+  const providerFactory=()=>({transcribe:async()=>({text:'침대'})});
+  await withApp({config,origins:[apiOrigin],frontends:[origin],apiOnly:true,renderLessons:true,providerFactory},async app=>{
+    assert.equal((await request(app,'/teacher.html',{headers})).status,404);
+    const health=await request(app,'/teacher-api/health',{headers});
+    assert.equal(JSON.parse(health.text).version,'0.3.0');
+    const preflight=await request(app,'/teacher-api/rooms',{method:'OPTIONS',headers:{
+      ...headers,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'
+    }});
+    assert.equal(preflight.status,204);
+    assert.equal(preflight.headers['access-control-allow-origin'],origin);
+    const room=await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
+    assert.equal(room.status,201);
+    assert.equal(JSON.parse(room.text).serverVersion,'0.3.0');
+    assert.equal((await request(app,'/teacher-api/rooms',{method:'POST',headers:{...headers,Origin:'https://other.example.test','Content-Type':'application/json'},body:'{}'})).status,403);
+    const stt=await request(app,'/transcribe',{method:'POST',headers:{...headers,'Content-Type':'audio/webm','X-Requested-With':'KoreanStickman','X-Audio-Duration-Ms':'1000'},body:Buffer.alloc(200)});
+    assert.equal(stt.status,200);
+    assert.equal(JSON.parse(stt.text).text,'침대');
+    assert.equal(stt.headers['access-control-allow-origin'],origin);
+  });
+});
 test('Render URL is explicit HTTPS; unexpected public domains and unsafe URL settings are rejected',()=>{
   assert.deepEqual(publicOrigins({RENDER_EXTERNAL_URL:'https://stickman.onrender.com'}),['https://stickman.onrender.com']);
   assert.deepEqual(publicOrigins({RENDER_EXTERNAL_HOSTNAME:'stickman.onrender.com'}),['https://stickman.onrender.com']);

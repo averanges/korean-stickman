@@ -84,3 +84,15 @@ test('failed recognition preserves an awake hero; the next attempt does not wake
   await h.speech.start();h.advance(1000,.02);h.speech.stop();await flush();
   assert.equal(world.profile.country,'russia');assert.equal(world.profile.profession,'student');assert.equal(world.profile.awake,true);assert.equal(wakes,0);
 });
+
+// Teacher Mode must suppress a delayed response from the corrected voice attempt.
+import {TeacherCommandBridge} from '../src/teacher-bridge.js';
+test('teacher correction cancels late STT before it can overwrite the confirmed hero characteristic',async()=>{
+ const store=new Map(),storage={getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)};
+ const world=new WorldState(storage),controller=new ActionController(world,{wake:async()=>true,equip:async()=>true,setProfile(){},reset(){}}),h=harness({deferred:true});let finals=0;
+ h.speech.callbacks.onFinal=()=>{finals++;return controller.run(parseKorean('저는 한국 사람이에요'));};
+ await h.speech.start();h.advance(1000,.02);h.speech.stop();await flush();assert.equal(h.speech.state,'processing');const attempt=h.speech.session.operationId;
+ const bridge=new TeacherCommandBridge({storage,key:'teacher-journal',level:()=> 'creator',correct:id=>{assert.equal(id,attempt);h.speech.cancel();controller.cancel();},execute:c=>controller.run(c)});
+ const acknowledgements=[];await bridge.deliver({id:crypto.randomUUID(),action:'set',field:'country',value:'russia',correctsAttemptId:attempt},async(id,status)=>{acknowledgements.push(status);return {accepted:true};});
+ h.finishUpload();await flush();assert.equal(finals,0);assert.equal(world.profile.country,'russia');assert.deepEqual(acknowledgements,['received','executed']);
+});

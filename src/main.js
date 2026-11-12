@@ -1,3 +1,7 @@
+import {roomSummary,compactResult,teacherProposals} from './teacher-room.js';
+import {FamilyBoard} from './family-board.js';
+import {TeacherResolution,teacherSuggestions} from './teacher-resolution.js';
+import {StudentLesson} from './teacher-student.js';
 import {SttExperiment} from './stt-experiment.js';
 import {LanguageService,languageMessage} from './language-service.js';
 import {LanguageJournal} from './language-journal.js';
@@ -19,13 +23,17 @@ import { RoomState, RoomController, parseRoom,ROOM_ITEMS } from './room-state.js
 import { RoomRenderer } from './room-renderer.js';
 const $=selector=>document.querySelector(selector);
 const world=new WorldState();
-const renderer=new Renderer(world.profile);
+const renderer=new Renderer(world.profile);renderer.familyBoard=new FamilyBoard($('#family-board'));renderer.familyBoard.update(world.profile,renderer.heroPortrait(),{instant:true});
 const room=new RoomState();
 const roomRenderer=new RoomRenderer(renderer,{onPhase:message=>{$('#room-caption').textContent=message;}});
 const roomController=new RoomController(room,roomRenderer,{onChange:()=>refresh(),onProgress:command=>{
+  if(command.commands?.[0]?.action==='teacher_feedback')return;
   $('#transcript').textContent=command.heard||'…';feedback(command.ok?'Герой тебя услышал. Смотри, что будет…':command.message);
 }});
 let controller, speech, last=null, revision=0, voiceError=false, speechPhase='idle', mode='creator';
+let lastRoomResult=null;const teacherVoice={stage:'idle',server:'',error:'',technical:false};
+let lesson=null,teacherAttemptId=null,teacherRecordingLive=false;const correctedVoiceAttempts=new Set();const lessonView={lastPhrase:'',interpretation:'',lastCommand:'',voiceAttemptId:null};
+const teacherResolution=new TeacherResolution({cue:cue=>{if(mode==='creator')void controller.run({ok:true,action:'teacher_feedback',cue});else void roomController.run({ok:true,commands:[{action:'teacher_feedback',cue}]});},onChange:()=>{if(lesson?.sharing)void lesson.sync();}});
 let recordedMs=0,voiceStage='idle',testSpeech,serverChecks,retryingConnection=false;
 const registry=new SttServers();
 const testDiagnostics=new VoiceDiagnostics();
@@ -51,6 +59,7 @@ function refresh(){
     if(node.textContent!==text){node.textContent=text;node.classList.remove('updated');void node.offsetWidth;node.classList.add('updated');}
     node.classList.toggle('empty',!profile[field]);
   }
+  $('#profile-age').textContent=profile.age===null?'—':profile.age+' 살';$('#profile-age').classList.toggle('empty',profile.age===null);
   const activeController=mode==='home'?roomController:controller;
   const testBusy=Boolean(testSpeech?.active||sttExperiment.running);
   const listening=speech?.recording||false,voiceBusy=speech?.active||false,busy=mode==='home'?roomController.busy:world.busy;
@@ -90,6 +99,7 @@ function refresh(){
 controller=new ActionController(world,renderer,{
   onChange:refresh,
   onProgress:command=>{
+    if(command.action==='teacher_feedback'){if(command.cue==='thinking')feedback(lesson?.sharing?'Думаю… Преподаватель может выбрать действие.':'Не уверен, что услышал правильно. Можно повторить фразу.');else if(['wrong','reject'].includes(command.cue))feedback('Не совсем понял. Попробуй сказать ещё раз.');else if(command.cue==='understood')feedback('Понял!');return;}
     $('#transcript').textContent=command.heard||command.text||'…';
     feedback(command.ok?'Герой тебя услышал. Смотри, что будет…':command.message,command.ok?'':command.type);
   },
@@ -98,11 +108,12 @@ async function execute(command){
   if(mode==='home'){
     voiceError=false;if(command.ok)last=command;const current=revision;
     if(roomController.busy)feedback('Фраза в очереди. Герой сначала закончит движение.');
-    const result=await roomController.run(command);
+    const result=await roomController.run(command);lastRoomResult=compactResult(result);if(lesson?.sharing){lessonView.lastCommand=JSON.stringify(lastRoomResult);void lesson.sync();}
     if(!result.cancelled&&revision===current&&mode==='home'&&(!roomController.busy||result.type==='queue'))feedback(result.message,result.type);
     refresh();return result;
   }
   if(command.commands){const revisionBefore=revision;const results=await Promise.all(command.commands.map(item=>execute({...item,heard:command.heard})));if(revision===revisionBefore){last=command;refresh();}return results;}
+  if(!command.source?.startsWith('teacher')&&command.action!=='teacher_feedback'&&teacherResolution.attempt?.status==='waiting_teacher')teacherResolution.claim(teacherResolution.attempt.id);
   voiceError=false;
   const current=revision;
   if(command.ok)last=command;
@@ -111,33 +122,43 @@ async function execute(command){
   if(result.cancelled||current!==revision||mode!=='creator')return;
   // Do not overwrite the next command's live feedback when its predecessor resolves.
   if(!world.busy||result.type==='queue')feedback(result.message,result.type);
-  refresh();return result;
+  lessonExecuted(command,result);refresh();return result;
 }
 speech=new BrowserSpeech({
   onLevel:(level,details)=>{const meter=$('#mic-meter');meter.hidden=!details.active||details.available===false;const weights=[.5,.72,.9,1,.83,.65,.4];Array.from(meter.children).forEach((bar,i)=>bar.style.transform=`scaleY(${.08+Math.max(0,Math.min(1,level))*weights[i]*.92})`);$('#mic-quiet').hidden=!details.active||details.available===false||!(details.quietMs>5000);},
   onStatus:(phase,details)=>{
-    speechPhase=phase;recordedMs=details?.elapsedMs||0;voiceError=false;
+    if(phase==='requesting'){teacherAttemptId=speech?.session?.operationId||null;teacherRecordingLive=false;if(lesson?.sharing)lessonView.voiceAttemptId=teacherAttemptId;teacherResolution.begin(teacherAttemptId);teacherVoice.error='';teacherVoice.technical=false;}
+    if(phase==='recording'&&!teacherRecordingLive){teacherRecordingLive=true;lesson?.event('recording-start',{attemptId:teacherAttemptId});}
+    teacherVoice.stage=phase;speechPhase=phase;recordedMs=details?.elapsedMs||0;voiceError=false;
     if(phase==='requesting'){$('#transcript').textContent='…';feedback('Говори спокойно: паузы можно делать любой длины. Закончив, нажми микрофон ещё раз.');}
     if(phase==='processing')feedback('Запись готова. Подготавливаем отправку.');
     refresh();
   },
   beforeUpload:()=>{if(!health.ready)throw new SpeechError(health.state==='ready'?'not-configured':'server-unavailable',{stage:'audio_ready',source:registry.get(registry.selected)?.label||'configuration'});},
   onStage:(stage,details)=>{
+    teacherVoice.stage=stage;if(stage==='routing')teacherVoice.server=details.serverName||details.serverId||'';
+    if(teacherRecordingLive&&['audio_ready','error','cancelled'].includes(stage)){teacherRecordingLive=false;lesson?.event('recording-end',{attemptId:teacherAttemptId});}
+    if(lesson?.sharing){const eventType={uploading:'upload-start',routing:'stt-server',error:'error',cancelled:'error',completed:'success'}[stage];if(eventType)lesson.event(eventType,{attemptId:teacherAttemptId,server:details.serverName||details.serverId||'',text:stage==='error'?details.error||'':details.result||''});}
     if(['timing','routing','switching'].includes(stage)){if(details.attemptCount)retryingConnection=details.attemptCount>1;diagnostics.update(details);refresh();return;}
     voiceStage=stage;if(['uploading','processing'].includes(stage))feedback(STAGE_LABELS[stage]);diagnostics.stage(stage,{...details,...(details.elapsedMs!==undefined?{durationMs:details.elapsedMs}:{})});refresh();
   },
   onFinal:async text=>{
-    const voiceSession=speech.session;
-    const current=revision;$('#command').value=text;const resolved=await resolveLanguage(text,true,speech.session?.abort.signal);if(!resolved||speech.session!==voiceSession||revision!==current)return;const {command,record}=resolved;diagnose(text,command,'Groq');
+    const voiceSession=speech.session;if(correctedVoiceAttempts.has(voiceSession?.operationId))return;
+    $('#transcript').textContent=text;teacherResolution.update(teacherAttemptId,{phrase:String(text).slice(0,500),sttText:String(text).slice(0,500)});
+    if(lesson?.sharing){lessonView.lastPhrase=String(text).slice(0,500);lesson.event('transcript',{attemptId:teacherAttemptId,text});}
+    const current=revision;$('#command').value=text;const resolved=await resolveLanguage(text,true,speech.session?.abort.signal);if(!resolved&&speech.session===voiceSession&&revision===current&&!correctedVoiceAttempts.has(teacherAttemptId))teacherResolution.wait(teacherAttemptId);if(!resolved||speech.session!==voiceSession||revision!==current||correctedVoiceAttempts.has(voiceSession?.operationId))return;const {command,record}=resolved;diagnose(text,command,'Groq');
     diagnostics.update({transcript:text,action:command.ok?describeAction(command):'не определено'});
-    if(!command.ok){feedback(command.message,'error');diagnostics.update({result:command.message});return {ok:true,message:command.message};}
+    if(!command.ok){feedback(command.message,'error');teacherResolution.wait(teacherAttemptId);diagnostics.update({result:command.message});return {ok:true,message:command.message};}
     speech.stage('executing');const actionStarted=performance.now();const result=await execute(command),results=Array.isArray(result)?result:[result],failure=results.find(r=>r?.cancelled||r?.type==='error'||r?.type==='queue');
     if(speech.session!==voiceSession){if(record)languageJournal.finish(record,'cancelled',performance.now()-actionStarted);return;}
     if(record)languageJournal.finish(record,failure?'rejected':'executed',performance.now()-actionStarted);
+    teacherResolution.finish(teacherAttemptId,failure?'rejected':'executed');
     diagnostics.update({result:failure?.message||(failure?.cancelled?'Действие отменено':results.map(r=>r?.message).filter(Boolean).join(' · ')||'Выполнено')});
     return failure?{error:'game-error'}:{ok:true,message:diagnostics.data.result};
   },
   onError:code=>{
+    teacherVoice.error=String(code).slice(0,80);teacherVoice.technical=!['unclear','unknown-command','empty-audio','too-short'].includes(code);teacherVoice.stage='error';
+    if(lesson?.sharing&&teacherResolution.attempt?.id===teacherAttemptId&&!correctedVoiceAttempts.has(teacherAttemptId))teacherResolution.wait(teacherAttemptId);
     voiceError=true;
     const message=code==='game-error'&&diagnostics.data.result?diagnostics.data.result:code==='no-compatible-server'?ERROR_MESSAGES[code]:speech.pending&&diagnostics.data.exhausted?'Не удалось обработать запись. Можно попробовать снова или записать новую фразу.':code==='unknown-command'?`Я услышал «${String(diagnostics.data.transcript||'').slice(0,200)}», но не понял команду.`:ERROR_MESSAGES[code]||'Не удалось распознать речь. Попробуйте ещё раз.';
     feedback(message+(speech.pending?' Запись сохранена до повторной отправки или удаления.':''),'error');refresh();
@@ -150,8 +171,8 @@ function diagnose(raw,command,source){
   if(new URLSearchParams(location.search).get('debug')==='1')console.info('[Korean Stickman interpretation]',{source,raw,accepted:command.ok,intents:command.intents||[],reason:command.reason||command.type||'unknown'});
 }
 function selectedCommand(text,voice=false){return $('#stt-language').value==='ru'?interpretRussian(text,{home:mode==='home',profile:world.profile,voice}):mode==='home'?parseRoom(text,{debug:!voice&&roomRenderer.debug}):voice?interpretSpeech([{text}],world.profile):parseKorean(text,world.profile);}
-function describeAction(command){const list=command.commands||[command];return list.map(c=>c.item?`${c.action} ${c.item}`:c.field?`${c.action} ${c.field}=${c.value}`:c.action||c.reason||'unknown').join(' → ');}
-$('#command-form').onsubmit=async event=>{event.preventDefault();if(speech.active||testSpeech?.active||sttExperiment.running)return;const raw=$('#command').value,resolved=await resolveLanguage(raw,false);if(!resolved)return;const {command,record}=resolved;if(!command.ok){feedback(command.message,'error');return;}const started=performance.now(),outcome=await execute(command);if(record)languageJournal.finish(record,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);};
+function describeAction(command){const list=command.commands||[command];return list.map(c=>c.item?`${c.action} ${c.item}`:c.field?`${c.action} ${c.field}=${c.value}`:c.action==='set_age'?'age='+c.age:c.action==='family'?(c.present?'add ':'remove ')+c.members.join(','):c.action||c.reason||'unknown').join(' → ');}
+$('#command-form').onsubmit=async event=>{event.preventDefault();if(speech.active||testSpeech?.active||sttExperiment.running)return;const raw=$('#command').value;if(mode==='creator'){teacherAttemptId=crypto.randomUUID();teacherResolution.begin(teacherAttemptId);teacherResolution.update(teacherAttemptId,{phrase:raw.slice(0,500)});}const resolved=await resolveLanguage(raw,false);if(!resolved)return;const {command,record}=resolved;if(!command.ok){feedback(command.message,'error');teacherResolution.wait(teacherAttemptId);return;}const started=performance.now(),outcome=await execute(command);teacherResolution.finish(teacherAttemptId,Array.isArray(outcome)?outcome.every(r=>r?.type==='success')?'executed':'rejected':outcome?.type==='success'?'executed':'rejected');if(record)languageJournal.finish(record,outcome?.cancelled?'cancelled':outcome?.type==='error'?'rejected':'executed',performance.now()-started);};
 
 function beginVoice(){cancelLanguage();retryingConnection=false;voiceError=false;diagnostics.begin(speech.language);diagnostics.update({serverId:registry.selected,serverName:registry.get(registry.selected)?.label,serverUrl:registry.address(registry.selected,{local:true}),testMode:health.mode==='auto'?'автоматически':'вручную'});speech.start();}
 $('#mic').onclick=()=>{if(speech.recording)speech.stop();else if(!speech.active&&health.ready)beginVoice();refresh();};
@@ -171,14 +192,14 @@ $('#reset').onclick=()=>{sttExperiment.clear();cancelLanguage();
   changeLevel(false);feedback('Новая история начинается с приветствия. 안녕하세요!');refresh();
 };
 function changeLevel(home){
-  sttExperiment.cancel();cancelLanguage();
+  sttExperiment.cancel();cancelLanguage();teacherResolution.reset();lessonView.voiceAttemptId=null;
   revision++;speech.cancel();if(testSpeech?.active)testSpeech.cancel();roomController.cancel();roomRenderer.visible=false;controller.cancel();world.save();
-  mode=home?'home':'creator';last=null;voiceError=false;renderer.visible=!home;
+  mode=home?'home':'creator';if(lesson?.sharing)void lesson.sync();document.body.classList.toggle('level-one',!home);const note=$('.optional-note');if(home)$('#enter-world').after(note);else $('.future').append(note);last=null;voiceError=false;renderer.visible=!home;
   document.title=home?'Korean Stickman — Мой дом · V3.0.2':'Korean Stickman — Создай своего героя · V3.0';
   $('#creator-stage').hidden=home;$('#home-stage').hidden=!home;$('#room-panel').hidden=!home;
   $('.profile-fields').hidden=home;$('.future').hidden=home;
-  $('.hero-card h1').textContent=home?'Мой дом':'Создай своего героя';
-  $('.card-subtitle').textContent=home?'Слова наполняют комнату':'Расскажи о нём по-корейски';
+  $('.hero-card h1').textContent=home?'Мой дом':'Мой герой';
+  $('.card-subtitle').textContent=home?'Слова наполняют комнату':'Уровень 01';
   $('.header-actions .level-tag b').textContent=home?'02':'01';
   $('#enter-world').textContent=home?'← К герою':'В мир →';
   $('.optional-note').textContent=home?'Характеристики героя сохранены':'Можно отправиться даже с пустой анкетой';
@@ -256,6 +277,7 @@ async function resolveLanguage(raw,voice,parentSignal){
   if(result.usesContext&&JSON.stringify(languageContext())!==fingerprint){feedback('Состояние комнаты изменилось. Повтори фразу.');return null;}
   result.validation=validateForWorld(result.interpretation,languageContext(),{legacyBatch:result.legacyBatch});result.command=result.validation.ok?engineCommand(result.interpretation,raw):null;
   result.timing.sttMs=voice?Number(diagnostics.data.totalWaitMs??diagnostics.data.waitMs??0):0;const record=languageJournal.start(result,voice?'voice':'text');$('#language-last').textContent=JSON.stringify({raw:result.raw,local:result.local,features:result.features,method:result.method,llmCalled:result.llmCalled,llmError:result.llmError,intent:result.interpretation,hint:result.hint,validation:result.validation,timing:result.timing},null,2);
+  if(lesson?.sharing){lessonView.interpretation=JSON.stringify({input:voice?'voice':'text',method:result.method,interpretation:result.interpretation,validation:result.validation}).slice(0,1800);lesson.event('interpretation',{attemptId:voice?teacherAttemptId:null,text:lessonView.interpretation});if(voice)teacherResolution.update(teacherAttemptId,{interpretation:lessonView.interpretation,suggestions:teacherSuggestions(result),proposals:mode==='home'?teacherProposals(result):[]});}
   if(!result.command){if(result.interpretation.status==='clarify'&&result.candidates.length)showClarification(result,record,sequence);return {command:{ok:false,message:languageMessage(result),heard:raw},record};}
   return {command:result.command,record};
  }catch(error){if(error.name==='AbortError')return null;feedback('Не удалось разобрать фразу. Знакомые короткие команды продолжают работать.','error');return null;}
@@ -281,3 +303,36 @@ function renderExperiment(clip,blocked){
  const body=$('#experiment-rows');body.replaceChildren();
  for(const row of experiment.rows){const tr=document.createElement('tr');for(let n=0;n<3;n++)tr.append(document.createElement('td'));tr.children[0].textContent=row.id+'. '+row.label+(row.model?' · '+row.model:'');tr.children[1].textContent=row.state==='ok'?(row.rawText||'(пустой текст)'):({waiting:'Ожидает',running:'Распознаётся…',cancelled:'Отменено',error:'Ошибка'}[row.state]||row.state);tr.children[1].style.whiteSpace='pre-wrap';tr.children[2].textContent=[row.elapsedMs!==undefined?row.elapsedMs+' мс':'',({'not-configured':'В Vercel не настроен ключ Groq','experiment-mismatch':'Модель или схема не совпадает: обновите Vercel и страницу','experiment-not-deployed':'Обновите backend Vercel для эксперимента','provider-auth':'Провайдер не принял ключ','rate-limit':'Лимит запросов API',timeout:'Тайм-аут'}[row.error]||row.error||''),row.httpStatus?'HTTP '+row.httpStatus:'',row.providerHttpStatus?'API провайдера HTTP '+row.providerHttpStatus:'',row.extraKeywords?.length?'Словарные слова вне эталона: '+row.extraKeywords.join(', '):'',row.quality==='unclear-by-current-guard'?'Текущий фильтр игры счёл бы запись неразборчивой':''].filter(Boolean).join(' · ');body.append(tr);}
 }
+
+function lessonExecuted(command,result){
+ if(!lesson?.sharing||mode!=='creator'||result?.type!=='success')return;
+ lessonView.lastCommand=JSON.stringify({action:describeAction(command),result:result.type||'cancelled',message:result.message||''}).slice(0,1000);
+}
+async function executeTeacher(command,{onStart,correctsAttemptId=null}={}){
+ if(onStart){if(mode==='creator'&&command.commands)command.commands[0].teacherStart=onStart;else command.teacherStart=onStart;}
+ const reaction=command.action==='teacher_feedback'?command.cue:null;
+ let id=reaction?teacherResolution.attempt?.id:correctsAttemptId;
+ if(command.action==='teacher_feedback'&&command.cue==='thinking'&&!id){teacherAttemptId=crypto.randomUUID();id=teacherAttemptId;lessonView.voiceAttemptId=id;teacherResolution.begin(id);}
+ if(command.action==='teacher_feedback'){if(command.cue==='thinking'&&id)teacherResolution.wait(id,{animate:false});else if(command.cue==='reset'){teacherResolution.reset();lessonView.voiceAttemptId=null;lessonView.lastPhrase='';lessonView.interpretation='';}else if(id)teacherResolution.finish(id,command.cue==='understood'?'auto':'rejected');}
+ if(mode==='home'&&reaction)command={ok:true,teacherStart:onStart,commands:[{action:'teacher_feedback',cue:reaction}]};
+ let result=await execute(command);if(mode==='home'&&command.teacherRoom&&result&&!result.cancelled){if(result.type==='')result={...result,type:'success'};else if(result.type==='error')result={...result,type:'blocked',reason:String(roomController.operation?.message||'game_constraint').slice(0,80),missing:[]};lastRoomResult=compactResult(result);if(lesson?.sharing)void lesson.sync();}const all=Array.isArray(result)?result:[result];
+ if(!reaction&&id)teacherResolution.finish(id,all.every(r=>r?.type==='success')?'executed':all.some(r=>r?.type==='blocked')?'blocked':'rejected');
+ return result;
+}
+function renderLesson(connection){
+ if(connection.ended){teacherResolution.reset();renderer.clearTeacherFeedback();}
+ const box=$('#lesson-connection');box.hidden=connection.status==='idle';box.dataset.state=connection.status;
+ $('#lesson-status').textContent=connection.message||'';$('#lesson-disconnect').hidden=!connection.enabled;
+}
+function correctTeacherVoice(attemptId){
+ if(attemptId!==teacherAttemptId)throw Error('stale-teacher-attempt');
+ if(voiceStage==='executing'&&(mode==='home'?roomController.busy:world.busy))throw Error('voice-already-executing');
+ teacherResolution.claim(attemptId);
+ correctedVoiceAttempts.add(attemptId);if(correctedVoiceAttempts.size>100)correctedVoiceAttempts.delete(correctedVoiceAttempts.values().next().value);
+ if(attemptId===teacherAttemptId){cancelLanguage();speech.cancel();voiceError=false;}
+ lesson?.event('correction',{attemptId,text:'Преподаватель исправляет эту попытку. Поздний ответ не будет выполнен.'});
+}
+lesson=new StudentLesson({snapshot:()=>({level:mode,profile:{name:String(world.profile.name||'').slice(0,32),awake:world.profile.awake,gender:world.profile.gender,country:world.profile.country,profession:world.profile.profession,age:world.profile.age,family:[...world.profile.family]},...lessonView,attempt:teacherResolution.attempt,room:mode==='home'?roomSummary(room,roomController,lastRoomResult):null,voice:{...teacherVoice}}),level:()=>mode,restoreLevel:level=>{if(level==='home'&&mode!=='home')changeLevel(true);},execute:executeTeacher,correct:correctTeacherVoice,cancel:()=>{if(mode==='home')roomController.cancel();else controller.cancel();},onChange:renderLesson});
+$('#lesson-disconnect').onclick=()=>lesson.disconnect();
+window.addEventListener('pagehide',()=>lesson.release());
+lesson.start().catch(error=>lesson.handleError(error));

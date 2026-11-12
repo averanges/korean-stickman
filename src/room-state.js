@@ -1,3 +1,4 @@
+import {roomMissing} from './teacher-room.js';
 import {findPlacement,furnitureBlockers,furnitureLocation,placementError} from './room-placement.js';
 import {TABLE,FLOOR_SLOTS,TABLE_SLOTS,START,GRIPS,project,approach,distance,facingFor} from './room-space.js';
 import {planRoute,walkable,chooseRoute,NAV} from './room-navigation.js';
@@ -253,6 +254,14 @@ export class RoomController{
     if(this.running===this.epoch)return;const epoch=this.epoch;this.running=epoch;this.busy=true;this.onChange();
     while(this.queue.length&&epoch===this.epoch){const {command,resolve}=this.queue.shift();this.onProgress(command);this.onChange();let result;
       try{
+        if(command.teacherStart&&!await command.teacherStart()){resolve({cancelled:true});continue;}
+        if(command.teacherRoom){
+          const missing=[...new Set(command.commands.flatMap(op=>roomMissing(op,this.state)))];
+          if(missing.length){await this.renderer.confused();resolve(epoch===this.epoch?{type:'blocked',reason:'missing_'+missing[0],missing,message:'Нужен предмет: '+missing.map(id=>ROOM_ITEMS[id].toLowerCase()).join(', ')}:{cancelled:true});continue;}
+          if(this.renderer.teacherFeedback&&!await this.renderer.teacherFeedback('understood')){resolve({cancelled:true});continue;}
+        }
+        if(command.commands?.[0]?.action==='teacher_feedback'){const done=await this.renderer.teacherFeedback(command.commands[0].cue);resolve(epoch===this.epoch&&done?{type:'success',message:'Реакция завершена.'}:{cancelled:true});continue;}
+        this.renderer.clearTeacherFeedback?.();
         if(!command.ok){result={message:command.message,type:'error'};await this.renderer.confused();}
         else for(const action of command.commands){
           if(action.action==='lesson'){result=await runLesson(this,action.item,epoch);if(result.cancelled||result.type==='error')break;continue;}

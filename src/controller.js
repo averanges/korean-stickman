@@ -1,3 +1,4 @@
+import {validAge,validFamily} from './identity-topics.js';
 export class ActionController {
   constructor(world, renderer, { onChange = () => {}, onProgress = () => {} } = {}) {
     this.world = world; this.renderer = renderer; this.onChange = onChange; this.onProgress = onProgress;
@@ -22,9 +23,24 @@ export class ActionController {
       const { command, resolve } = this.queue.shift();
       this.onProgress(command); this.onChange();
       try {
+        if(command.teacherStart&&!await command.teacherStart()){resolve({cancelled:true});continue;}
+        if(command.action==='teacher_feedback'){
+          if(!['thinking','understood','wrong','reject','reset','did_not_understand','try_again'].includes(command.cue)){resolve({type:'error',message:'Неизвестный сигнал преподавателя.'});continue;}
+          const done=await this.renderer.teacherFeedback?.(command.cue);
+          resolve(epoch===this.epoch&&done?{type:'success',message:command.cue==='thinking'?'Герой думает.':command.cue==='understood'?'Герой понял.':command.cue==='reset'?'Последняя попытка сброшена.':'Повтори фразу.'}:{cancelled:true});continue;
+        }
+        this.renderer.clearTeacherFeedback?.();
+        if(command.source==='teacher'&&command.ok&&this.renderer.teacherFeedback){const understood=await this.renderer.teacherFeedback('understood');if(!understood||epoch!==this.epoch){resolve({cancelled:true});continue;}}
         if (!command.ok) {
           await this.renderer.confused();
           resolve(epoch === this.epoch ? { type: command.type, message: command.message } : { cancelled: true }); continue;
+        }
+        if(command.action==='set_age'||command.action==='family'){
+          const age=command.action==='set_age';if(age?!validAge(command.age):!validFamily(command.members)||!command.members.length||typeof command.present!=='boolean'){resolve({type:'error',message:'Некорректный возраст или родственник.'});continue;}
+          if(!this.world.profile.awake&&!await this.renderer.wake()){resolve({cancelled:true});continue;}if(epoch!==this.epoch){resolve({cancelled:true});continue;}
+          const next={...this.world.profile,awake:true,...(age?{age:command.age}:{family:command.present?[...new Set([...this.world.profile.family,...command.members])]:this.world.profile.family.filter(id=>!command.members.includes(id))})};
+          const done=age?await this.renderer.changeAge(next):await this.renderer.changeFamily(next);if(!done||epoch!==this.epoch){resolve({cancelled:true});continue;}
+          this.world.apply(command);this.renderer.setProfile(this.world.profile);this.onChange();resolve({type:'success',message:age?`${command.age} 살 — готово!`:'우리 가족 — готово!'});continue;
         }
         if (!this.world.profile.awake && !await this.renderer.wake()) { resolve({ cancelled: true }); continue; }
         if (epoch !== this.epoch) { resolve({ cancelled: true }); continue; }
